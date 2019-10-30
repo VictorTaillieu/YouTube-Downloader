@@ -19,6 +19,16 @@ def set_dir(path):
     folder = filedialog.askdirectory()
     path.set(folder)
 
+def on_entry_click(event):
+    if inputUrl.get() == 'Enter video URL...':
+        inputUrl.delete(0, "end")
+        inputUrl.insert(0, '')
+        inputUrl.config(fg = 'black')
+def on_focusout(event):
+    if inputUrl.get() == '':
+        inputUrl.insert(0, 'Enter video URL...')
+        inputUrl.config(fg = 'grey')
+
 top = tk.Tk()
 top.title("YouTube downloader")
 top.iconbitmap("images/logo.ico")
@@ -56,6 +66,10 @@ inputAudio.place(rely=0.1, relwidth=0.3, relheight=0.3)
 # showStatus.place(relx=0.5, rely=0.1, relwidth=0.5, relheight=0.3)
 
 inputUrl = tk.Entry(frameVideo, textvariable=url)
+inputUrl.insert(0, "Enter video URL...")
+inputUrl.bind("<FocusIn>", on_entry_click)
+inputUrl.bind("<FocusOut>", on_focusout)
+inputUrl.config(fg="grey")
 inputUrl.place(rely=0.6, relwidth=0.7, relheight=0.3)
 
 getUrl = tk.Button(frameVideo, text="Download", activebackground="#ffa100", command=lambda: cmd(inputUrl.get(), audio.get(), outputDir.get()))
