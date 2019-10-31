@@ -2,17 +2,24 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog
 
-def cmd():
-    cmd = ["youtube-dl"]
-    path = outputDir.get()
-    if audio.get():
-        cmd.append("-f m4a")
-    if sub.get():
-        cmd.append("--write-sub")
-    cmd.append(inputUrl.get())
+def cmd(url):
+    if url == "Enter video URL...":
+        multiple_cmd()
+    else:
+        cmd = ["youtube-dl"]
+        path = outputDir.get()
+        if audio.get():
+            cmd.append("-f m4a")
+        if sub.get():
+            cmd.append("--write-sub")
+        cmd.append(url)
 
-    subprocess.call(cmd, cwd=path)
-    # open confirmation window
+        subprocess.call(cmd, cwd=path)
+
+def multiple_cmd():
+    with open("urls.txt", "r") as f:
+        for line in f:
+            cmd(line)
 
 def set_url(url, inputUrl):
     url.set(inputUrl.get())
@@ -74,7 +81,7 @@ inputUrl.bind("<FocusOut>", on_focusout)
 inputUrl.config(fg="grey")
 inputUrl.place(rely=0.6, relwidth=0.7, relheight=0.3)
 
-getUrl = tk.Button(frameVideo, text="Download", activebackground="#ffa100", command=cmd)
+getUrl = tk.Button(frameVideo, text="Download", activebackground="#ffa100", command=lambda: cmd(inputUrl.get()))
 getUrl.place(relx=0.75, rely=0.6, relwidth=0.25, relheight=0.3)
 
 top.mainloop()
