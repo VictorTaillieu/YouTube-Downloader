@@ -2,6 +2,7 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog
 
+
 def cmd(url):
     if url == "Enter video URL...":
         multiple_cmd()
@@ -16,27 +17,34 @@ def cmd(url):
 
         subprocess.call(cmd, cwd=path)
 
+
 def multiple_cmd():
     with open("urls.txt", "r") as f:
         for line in f:
             cmd(line)
 
+
 def set_url(url, inputUrl):
     url.set(inputUrl.get())
+
 
 def set_dir(path):
     folder = filedialog.askdirectory()
     path.set(folder)
 
+
 def on_entry_click(event):
     if inputUrl.get() == 'Enter video URL...':
         inputUrl.delete(0, "end")
         inputUrl.insert(0, '')
-        inputUrl.config(fg = 'black')
+        inputUrl.config(fg='black')
+
+
 def on_focusout(event):
     if inputUrl.get() == '':
         inputUrl.insert(0, 'Enter video URL...')
-        inputUrl.config(fg = 'grey')
+        inputUrl.config(fg='grey')
+
 
 top = tk.Tk()
 top.title("YouTube downloader")
