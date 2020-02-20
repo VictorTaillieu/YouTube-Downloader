@@ -7,7 +7,7 @@ def cmd(url):
     if url == "Enter video URL...":
         multiple_cmd()
     else:
-        cmd = ["youtube-dl"]
+        cmd = ["youtube-dl", "-o %(title)s.%(ext)s"]
         path = outputDir.get()
         if audio.get():
             cmd.append("-f m4a")
@@ -87,8 +87,8 @@ inputAudio.place(rely=0.1, relwidth=0.3, relheight=0.3)
 inputSub = tk.Checkbutton(frameVideo, text="Subtitles", variable=sub, onvalue=1, offvalue=0)
 inputSub.place(relx=0.4, rely=0.1, relwidth=0.3, relheight=0.3)
 
-updateBt = tk.Button(frameVideo, text="Update", activebackground="#ffa100", command=update)
-updateBt.place(relx=0.75, rely=0.1, relwidth=0.25, relheight=0.3)
+getUpdate = tk.Button(frameVideo, text="Update", activebackground="#ffa100", command=update)
+getUpdate.place(relx=0.75, rely=0.1, relwidth=0.25, relheight=0.3)
 
 inputUrl = tk.Entry(frameVideo, textvariable=url)
 inputUrl.insert(0, "Enter video URL...")
