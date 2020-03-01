@@ -7,7 +7,7 @@ def cmd(url):
     if url == "Enter video URL...":
         multiple_cmd()
     else:
-        cmd = ["youtube-dl", "-o %(title)s.%(ext)s"]
+        cmd = ["youtube-dl", "-o", "%(title)s.%(ext)s"]
         path = outputDir.get()
         if audio.get():
             cmd.append("-f m4a")
