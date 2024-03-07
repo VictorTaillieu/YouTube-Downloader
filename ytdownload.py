@@ -53,7 +53,7 @@ def on_focusout(event):
 
 top = tk.Tk()
 top.title("YouTube downloader")
-top.iconbitmap("images/logo.ico")
+top.iconphoto(False, tk.PhotoImage(file="images/logo.png"))
 top.geometry("500x280")
 top.resizable(width=False, height=False)
 top.attributes("-topmost", True)
