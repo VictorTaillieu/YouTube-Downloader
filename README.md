@@ -1,6 +1,6 @@
 # YouTube Downloader
 
-This program allows you to download YouTube videos, it is based on [youtube-dl](https://ytdl-org.github.io/youtube-dl/). The graphical interface is made with Tkinter library.
+This program allows you to download YouTube videos, it is based on [yt-dlp](https://github.com/yt-dlp/yt-dlp). The graphical interface is made with Tkinter library.
 
 ![Interface](/images/interface.png)
 
@@ -25,4 +25,4 @@ From the interface, you first choose an output directory. Then, you may select s
 
 If you want to download several videos, paste all URLs in urls.txt on separate lines. Then, press download without writing anything in the URL box.
 
-**Notice: Sometimes youtube-dl is updated. If the download doesn't work, this could be the cause. In this case press update.**
+**Notice: Sometimes yt-dlp is updated. If the download doesn't work, this could be the cause. In this case press update.**

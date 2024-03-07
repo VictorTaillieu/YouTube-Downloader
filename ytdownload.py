@@ -7,7 +7,7 @@ def cmd(url):
     if url == "Enter video URL...":
         multiple_cmd()
     else:
-        cmd = ["youtube-dl", "-o", "%(title)s.%(ext)s"]
+        cmd = ["yt-dlp", "-o", "%(title)s.%(ext)s"]
         path = outputDir.get()
         if audio.get():
             cmd.append("-f m4a")
@@ -25,7 +25,7 @@ def multiple_cmd():
 
 
 def update():
-    cmd = ["youtube-dl", "-U"]
+    cmd = ["yt-dlp", "-U"]
     subprocess.call(cmd)
 
 
@@ -53,7 +53,7 @@ def on_focusout(event):
 
 top = tk.Tk()
 top.title("YouTube downloader")
-top.iconbitmap("images/logo.ico")
+top.iconphoto(False, tk.PhotoImage(file="images/logo.png"))
 top.geometry("500x280")
 top.resizable(width=False, height=False)
 top.attributes("-topmost", True)
