@@ -27,8 +27,6 @@ packages = ["src/ytdownloader"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-# Legacy Tkinter script, removed in iteration 2.
-extend-exclude = ["ytdownload.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

@@ -290,3 +290,40 @@ def test_parse_info_minimal_document():
 def test_parse_info_json_rejects_non_object():
     with pytest.raises(ValueError):
         ytdlp.parse_info_json("[]")
+
+
+def test_is_youtube_url():
+    from ytdownloader.ytdlp import is_youtube_url
+
+    for url in (
+        "https://www.youtube.com/watch?v=abc",
+        "https://youtu.be/abc",
+        "http://m.youtube.com/watch?v=abc",
+        "https://music.youtube.com/watch?v=abc",
+    ):
+        assert is_youtube_url(url)
+    for text in (
+        "",
+        "hello",
+        "ftp://youtube.com/x",
+        "https://notyoutube.com/x",
+        "https://youtube.com.evil.org/x",
+        "https://youtu.be/a b",
+    ):
+        assert not is_youtube_url(text)
+
+
+def test_format_progress():
+    from ytdownloader.ytdlp import Progress, format_progress
+
+    progress = Progress("downloading", 42, 100, 3_100_000.0, 72, "a.mp4")
+    assert format_progress(progress) == "42 % · 3,1 Mo/s · ETA 1:12"
+    unknown = Progress("downloading", 2_500_000, None, None, None, "a.mp4")
+    assert format_progress(unknown) == "2,5 Mo"
+
+
+def test_postprocess_stage():
+    from ytdownloader.ytdlp import postprocess_stage
+
+    assert postprocess_stage('[Merger] Merging formats into "a.mp4"').startswith("Fusion")
+    assert postprocess_stage("[youtube] abc: Downloading webpage") is None

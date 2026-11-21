@@ -40,8 +40,8 @@ Ce plan est copié dans le dépôt sous `docs/PLAN.md`. À la fin de chaque ité
 | It. | Sujet | Statut |
 |-----|-------|--------|
 | 0 | Nettoyage & squelette projet | ✅ fait |
-| 1 | Backend (outils, args, parsing) | ✅ fait (à relire/commiter) |
-| 2 | UI PySide6 minimale non bloquante | ⏳ à faire |
+| 1 | Backend (outils, args, parsing) | ✅ fait |
+| 2 | UI PySide6 minimale non bloquante | ✅ fait (à relire/commiter) |
 | 3 | Analyse URL & choix format/qualité | ⏳ à faire |
 | 4 | Sous-titres | ⏳ à faire |
 | 5 | Packaging & CI | ⏳ à faire |
@@ -94,6 +94,25 @@ Fait :
 - `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
 - `uv run python -m ytdownloader.tools --check`
 - Dans un dossier jetable : `YTDOWNLOADER_DATA_DIR=/tmp/ytd uv run python -m ytdownloader.tools --install all` puis `--update` puis `--check` (les 3 outils en « managed »).
+
+#### It. 2 — 2026-11-21
+Fait :
+- `src/ytdownloader/jobs.py` : `DownloadJob` (`QProcess`, signaux progression / étape / log / succès / échec / annulation) et `ToolTask` (`QThread` pour détecter, installer et mettre à jour les outils sans geler l'UI).
+- Annulation : yt-dlp tourne dans sa propre session et tout l'arbre de processus est tué (`killpg`, `taskkill /T` sous Windows), car le binaire autonome et ffmpeg sont des processus enfants. Seuls les fichiers écrits par ce téléchargement sont supprimés (`.part`, `.ytdl`, fragments, flux intermédiaires, `.temp`).
+- `src/ytdownloader/ui/main_window.py` : URL (collage auto d'une URL YouTube), dossier persisté (`QSettings`, défaut Téléchargements), barre + « 42 % · 3,1 Mo/s · ETA 0:12 », étape en cours (flux n, sous-titres, fusion, conversion), Annuler, Ouvrir le dossier, Mettre à jour yt-dlp, journal repliable, bandeau des outils manquants.
+- Suppression de `ytdownload.py`, `urls.txt`, `images/background.png`. Logo copié dans `src/ytdownloader/resources/`. README : commande de lancement mise à jour.
+- Tests : `tests/test_jobs.py`, `tests/test_main_window.py` (Qt `offscreen`), ajouts dans `tests/test_ytdlp.py`.
+- Validé en réel (Linux, sans affichage) : téléchargement de « Me at the zoo », annulation d'une grosse vidéo en cours sans fichier résiduel ni processus restant.
+
+Écarts :
+- « Mettre à jour yt-dlp » sur une copie système installe une copie gérée, qui devient prioritaire (une copie système n'est pas modifiable par l'app).
+- Sous Linux, ffmpeg manquant : confirmation avant de télécharger le build statique (~350 Mo), `apt` étant conseillé.
+- Le mode multi-URL (`urls.txt`) disparaît ; la file d'attente reste une idée optionnelle.
+
+À tester :
+- `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
+- `uv run python -m ytdownloader` : télécharger une vidéo courte, vérifier que la fenêtre reste réactive, annuler une longue vidéo, rouvrir l'app (dossier conservé).
+- Windows : non testé (annulation, encodage des noms de fichiers, absence de fenêtre console).
 
 ## Itérations (chacune testable et commitée par toi)
 

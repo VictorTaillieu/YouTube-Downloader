@@ -16,6 +16,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 PROGRESS_MARKER = "[ytdl-progress]"
 FILE_MARKER = "[ytdl-file]"
@@ -228,6 +229,70 @@ def parse_output_line(line: str) -> OutputEvent | None:
         eta=_int(data.get("eta")),
         filename=data.get("filename"),
     )
+
+
+_POSTPROCESS_STAGES = {
+    "[Merger]": "Fusion de l'audio et de la vidéo…",
+    "[ExtractAudio]": "Conversion audio…",
+    "[VideoRemuxer]": "Finalisation du conteneur…",
+    "[SubtitlesConvertor]": "Conversion des sous-titres…",
+    "[EmbedSubtitle]": "Intégration des sous-titres…",
+}
+SUBTITLE_EXTENSIONS = (".vtt", ".srt", ".ass", ".ttml", ".srv1", ".srv2", ".srv3", ".json3")
+
+
+def postprocess_stage(line: str) -> str | None:
+    """Label of the post-processing step announced by a log line, if any."""
+    tag = line.split(" ", 1)[0]
+    return _POSTPROCESS_STAGES.get(tag)
+
+
+def is_subtitle_file(filename: str) -> bool:
+    return filename.lower().endswith(SUBTITLE_EXTENSIONS)
+
+
+def is_youtube_url(text: str) -> bool:
+    """True for an http(s) URL on a YouTube host (used for clipboard auto-paste)."""
+    text = text.strip()
+    if not text or any(c.isspace() for c in text):
+        return False
+    try:
+        parts = urlsplit(text)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    return host in ("youtu.be", "youtube.com") or host.endswith(".youtube.com")
+
+
+def format_size(num_bytes: float) -> str:
+    value = float(num_bytes)
+    for unit in ("o", "Ko", "Mo"):
+        if value < 1000:
+            return f"{value:.0f} {unit}" if unit == "o" else f"{value:.1f} {unit}".replace(".", ",")
+        value /= 1000
+    return f"{value:.2f} Go".replace(".", ",")
+
+
+def format_eta(seconds: int) -> str:
+    minutes, secs = divmod(max(seconds, 0), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+def format_progress(progress: Progress) -> str:
+    """Status text such as ``42 % · 3,1 Mo/s · ETA 0:12``."""
+    parts: list[str] = []
+    if (fraction := progress.fraction) is not None:
+        parts.append(f"{fraction * 100:.0f} %")
+    elif progress.downloaded_bytes is not None:
+        parts.append(format_size(progress.downloaded_bytes))
+    if progress.speed:
+        parts.append(f"{format_size(progress.speed)}/s")
+    if progress.eta is not None and progress.status == "downloading":
+        parts.append(f"ETA {format_eta(progress.eta)}")
+    return " · ".join(parts)
 
 
 # --------------------------------------------------------------------------- metadata
