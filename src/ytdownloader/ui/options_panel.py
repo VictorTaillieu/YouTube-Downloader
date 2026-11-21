@@ -1,4 +1,4 @@
-"""Download options: video quality and container, or audio format and quality."""
+"""Download options: video quality and container, or audio format."""
 
 from __future__ import annotations
 
@@ -26,12 +26,6 @@ _AUDIO_LABELS = {
     "opus": "Opus",
     "flac": "FLAC",
 }
-_MP3_QUALITIES = (
-    ("Meilleure (VBR)", "0"),
-    ("320 kbit/s", "320K"),
-    ("192 kbit/s", "192K"),
-    ("128 kbit/s", "128K"),
-)
 
 
 def pick_height(heights: list[int], preferred: int) -> int | None:
@@ -72,14 +66,10 @@ class OptionsPanel(QWidget):
         self.audio_format_combo = QComboBox()
         for audio_format in AUDIO_FORMATS:
             self.audio_format_combo.addItem(_AUDIO_LABELS[audio_format], audio_format)
-        self.audio_quality_combo = QComboBox()
-        for label, value in _MP3_QUALITIES:
-            self.audio_quality_combo.addItem(label, value)
         audio_page = QWidget()
         audio_form = QFormLayout(audio_page)
         audio_form.setContentsMargins(0, 0, 0, 0)
         audio_form.addRow("Format", self.audio_format_combo)
-        audio_form.addRow("Qualité", self.audio_quality_combo)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(video_page)
@@ -97,7 +87,6 @@ class OptionsPanel(QWidget):
         self.height_combo.activated.connect(self._on_height_chosen)
         self.container_combo.currentIndexChanged.connect(self._on_choice)
         self.audio_format_combo.currentIndexChanged.connect(self._on_choice)
-        self.audio_quality_combo.currentIndexChanged.connect(self._on_choice)
 
     def _load(self) -> None:
         audio = self._settings.value("mode", "video", str) == "audio"
@@ -106,8 +95,6 @@ class OptionsPanel(QWidget):
         self.stack.setCurrentIndex(int(audio))
         self._select(self.container_combo, self._settings.value("container", "mp4", str))
         self._select(self.audio_format_combo, self._settings.value("audio_format", "mp3", str))
-        self._select(self.audio_quality_combo, self._settings.value("audio_quality", "0", str))
-        self._sync_audio_quality()
 
     @staticmethod
     def _select(combo: QComboBox, value: str) -> None:
@@ -115,15 +102,10 @@ class OptionsPanel(QWidget):
         if index >= 0:
             combo.setCurrentIndex(index)
 
-    def _sync_audio_quality(self) -> None:
-        # Only mp3 is always re-encoded; the other formats are copied or lossless.
-        self.audio_quality_combo.setEnabled(self.audio_format_combo.currentData() == "mp3")
-
     def _save(self) -> None:
         self._settings.setValue("mode", "audio" if self.audio_radio.isChecked() else "video")
         self._settings.setValue("container", self.container_combo.currentData())
         self._settings.setValue("audio_format", self.audio_format_combo.currentData())
-        self._settings.setValue("audio_quality", self.audio_quality_combo.currentData())
 
     def _on_mode(self) -> None:
         self.stack.setCurrentIndex(int(self.audio_radio.isChecked()))
@@ -136,7 +118,6 @@ class OptionsPanel(QWidget):
         self.changed.emit()
 
     def _on_choice(self) -> None:
-        self._sync_audio_quality()
         self._save()
         self.changed.emit()
 
@@ -156,5 +137,4 @@ class OptionsPanel(QWidget):
             max_height=self.height_combo.currentData() or None,
             container=self.container_combo.currentData(),
             audio_format=self.audio_format_combo.currentData(),
-            audio_quality=self.audio_quality_combo.currentData(),
         )

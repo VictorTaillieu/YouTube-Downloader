@@ -118,14 +118,15 @@ Fait :
 Fait :
 - Analyse via `InfoJob` (`QProcess`, `--dump-single-json --flat-playlist`) : automatique 400 ms après la saisie d'une URL YouTube, ou via « Analyser » / Entrée. Changer l'URL annule l'analyse en cours et ignore son résultat.
 - `ui/preview.py` : miniature, titre, chaîne, durée (textes web affichés en texte brut).
-- `ui/options_panel.py` : mode Vidéo (résolutions réellement disponibles + « Meilleure », MP4/MKV/WebM) ou Audio seul (Original, MP3, M4A, Opus, FLAC ; débit au choix pour le MP3). Choix conservés dans `QSettings`.
+- `ui/options_panel.py` : mode Vidéo (résolutions réellement disponibles + « Meilleure », MP4/MKV/WebM) ou Audio seul (Original, MP3, M4A, Opus, FLAC). Choix conservés dans `QSettings`.
 - `estimate_size()` : taille estimée selon les mêmes priorités de codecs que yt-dlp ; « inconnue » pour MP3 et FLAC, qui sont réencodés.
 - Le téléchargement exige désormais une analyse réussie et ffmpeg. Une URL déjà collée n'est plus recollée après son téléchargement.
 - Tests : 78 au total.
 - Validé en réel (Linux, sans affichage) : 8 combinaisons vidéo/audio vérifiées avec ffprobe, 42 estimations à moins de 2 % de la sélection de yt-dlp, source 5.1 convertie en MP3 stéréo 192 kbit/s, vidéo indisponible, chaîne/playlist refusée, changement d'URL pendant l'analyse.
 
 Écarts :
-- Qualité audio réglable seulement en MP3 : M4A et Opus sont copiés sans réencodage quand la source le permet, FLAC est sans perte.
+- Pas d'option de qualité audio (retirée après essai) : elle ne concernait que le MP3, désormais toujours encodé en VBR meilleure qualité (`--audio-quality 0`). M4A et Opus sont copiés sans réencodage quand la source le permet, FLAC est sans perte.
+- Bouton « Analyser » conservé pour les URL hors YouTube, qui ne déclenchent pas l'analyse automatique.
 - Les playlists sont refusées avec un message clair (idée optionnelle à part entière).
 - En MP4 au-delà de 1080p, YouTube ne propose généralement pas de H.264 : le fichier contient alors du VP9, moins bien lu par certains lecteurs.
 
