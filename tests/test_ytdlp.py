@@ -327,3 +327,58 @@ def test_postprocess_stage():
 
     assert postprocess_stage('[Merger] Merging formats into "a.mp4"').startswith("Fusion")
     assert postprocess_stage("[youtube] abc: Downloading webpage") is None
+
+
+def _size_info():
+    from ytdownloader.ytdlp import Format, VideoInfo
+
+    formats = [
+        Format("avc", "mp4", 1080, 30, "avc1.64", "none", 100),
+        Format("vp9", "webm", 1080, 30, "vp9", "none", 80),
+        Format("low", "mp4", 480, 30, "avc1.4d", "none", 30),
+        Format("aac", "m4a", None, None, "none", "mp4a.40.2", 10),
+        Format("opus", "webm", None, None, "none", "opus", 12),
+    ]
+    return VideoInfo("i", "t", None, 1, None, None, formats, {}, {})
+
+
+def test_estimate_size_follows_options():
+    from pathlib import Path
+
+    from ytdownloader.ytdlp import DownloadOptions, estimate_size
+
+    info = _size_info()
+    base = {"url": "u", "output_dir": Path("/o")}
+    assert estimate_size(info, DownloadOptions(**base)) == 110
+    assert estimate_size(info, DownloadOptions(**base, container="webm")) == 92
+    assert estimate_size(info, DownloadOptions(**base, max_height=720)) == 40
+    assert estimate_size(info, DownloadOptions(**base, max_height=144)) == 110  # same fallback
+    audio = {**base, "mode": "audio"}
+    assert estimate_size(info, DownloadOptions(**audio, audio_format="m4a")) == 10
+    assert estimate_size(info, DownloadOptions(**audio, audio_format="opus")) == 12
+    assert estimate_size(info, DownloadOptions(**audio, audio_format="mp3")) is None
+
+
+def test_estimate_size_mirrors_yt_dlp_codec_choices():
+    from pathlib import Path
+
+    from ytdownloader.ytdlp import DownloadOptions, Format, VideoInfo, estimate_size
+
+    formats = [
+        Format("av1", "mp4", 1080, 30, "av01.0", "none", 50),
+        Format("vp9", "webm", 1080, 30, "vp9", "none", 70),
+        Format("avc", "mp4", 1080, 30, "avc1.64", "none", 90),
+        Format("18", "mp4", 360, 30, "avc1.42", "mp4a.40.2", 9),
+        Format("v360", "mp4", 360, 30, "avc1.4d", "none", 20),
+        Format("aac2", "m4a", None, None, "none", "mp4a.40.2", 10, 2),
+        Format("aac6", "m4a", None, None, "none", "mp4a.40.2", 30, 6),
+        Format("opus", "webm", None, None, "none", "opus", 8, 2),
+    ]
+    info = VideoInfo("i", "t", None, 1, None, None, formats, {}, {})
+    base = {"url": "u", "output_dir": Path("/o")}
+    assert estimate_size(info, DownloadOptions(**base, container="mkv")) == 80  # AV1 + 5.1 AAC
+    assert estimate_size(info, DownloadOptions(**base, container="webm")) == 78  # VP9 + Opus
+    assert estimate_size(info, DownloadOptions(**base, max_height=360)) == 9  # combined stream
+    audio = {**base, "mode": "audio"}
+    assert estimate_size(info, DownloadOptions(**audio, audio_format="best")) == 30
+    assert estimate_size(info, DownloadOptions(**audio, audio_format="opus")) == 8

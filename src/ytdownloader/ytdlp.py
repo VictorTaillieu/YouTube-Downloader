@@ -105,7 +105,15 @@ def format_selector(max_height: int | None) -> str:
 
 def build_info_args(url: str, tools: ToolPaths | None = None) -> list[str]:
     """Arguments to fetch the video metadata as a single JSON document on stdout."""
-    return [*_common_args(tools), "--dump-single-json", "--no-warnings", "--", url]
+    # --flat-playlist: a playlist URL answers at once instead of resolving every video.
+    return [
+        *_common_args(tools),
+        "--dump-single-json",
+        "--flat-playlist",
+        "--no-warnings",
+        "--",
+        url,
+    ]
 
 
 def build_download_args(opts: DownloadOptions, tools: ToolPaths | None = None) -> list[str]:
@@ -308,6 +316,7 @@ class Format:
     acodec: str | None
     filesize: int | None
     """Exact or approximate size in bytes."""
+    audio_channels: int | None = None
 
     @property
     def has_video(self) -> bool:
@@ -368,6 +377,7 @@ def parse_info(data: dict[str, Any]) -> VideoInfo:
             vcodec=_codec(f.get("vcodec")),
             acodec=_codec(f.get("acodec")),
             filesize=_int(f.get("filesize")) or _int(f.get("filesize_approx")),
+            audio_channels=_int(f.get("audio_channels")),
         )
         for f in data.get("formats") or []
         if isinstance(f, dict)
@@ -390,3 +400,80 @@ def parse_info_json(text: str) -> VideoInfo:
     if not isinstance(data, dict):
         raise ValueError("yt-dlp returned unexpected JSON")
     return parse_info(data)
+
+
+# --------------------------------------------------------------------------- size estimate
+
+# These orders mirror what yt-dlp selects with the "-S" sorts defined at the top of this module.
+_H264 = ("avc1", "h264")
+_VP9 = ("vp9", "vp09")
+_AV1 = ("av01",)
+_AAC = ("mp4a", "aac")
+_OPUS = ("opus",)
+_VIDEO_CODEC_ORDER: dict[str, tuple[tuple[str, ...], ...]] = {
+    "mp4": (_H264, _VP9, _AV1),
+    "webm": (_VP9, _AV1, _H264),
+    "mkv": (_AV1, _VP9, _H264),
+}
+_AUDIO_CODEC_ORDER: dict[str, tuple[tuple[str, ...], ...]] = {
+    "mp4": (_AAC, _OPUS),
+    "m4a": (_AAC, _OPUS),
+    "webm": (_OPUS, _AAC),
+    "opus": (_OPUS, _AAC),
+    "mkv": (_OPUS, _AAC),
+    "best": (_OPUS, _AAC),
+}
+_CHANNELS_FIRST = ("mkv", "best")
+"""Without an explicit codec preference, yt-dlp favours the track with the most channels."""
+
+
+def _codec_rank(codec: str | None, order: tuple[tuple[str, ...], ...]) -> int:
+    codec = codec or ""
+    return next((i for i, prefixes in enumerate(order) if codec.startswith(prefixes)), len(order))
+
+
+def _audio_size(info: VideoInfo, key: str) -> int | None:
+    order = _AUDIO_CODEC_ORDER[key]
+    sized = [f for f in info.formats if f.has_audio and not f.has_video and f.filesize]
+
+    def sort_key(f: Format) -> tuple[int, int, int]:
+        rank, channels = _codec_rank(f.acodec, order), -(f.audio_channels or 0)
+        first, second = (channels, rank) if key in _CHANNELS_FIRST else (rank, channels)
+        return first, second, -(f.filesize or 0)
+
+    chosen = min(sized, key=sort_key, default=None)
+    return chosen.filesize if chosen else None
+
+
+def estimate_size(info: VideoInfo, opts: DownloadOptions) -> int | None:
+    """Approximate output size in bytes, or None when it cannot be predicted.
+
+    Audio that gets re-encoded (mp3, flac) has no reliable estimate.
+    """
+    if opts.mode == "audio":
+        if opts.audio_format not in _AUDIO_CODEC_ORDER:
+            return None
+        return _audio_size(info, opts.audio_format)
+
+    videos = [f for f in info.formats if f.has_video and f.height]
+    capped = [f for f in videos if opts.max_height is None or (f.height or 0) <= opts.max_height]
+    videos = capped or videos
+    if not videos:
+        return None
+    height = max(f.height or 0 for f in videos)
+    top = [f for f in videos if f.height == height]
+    fps = max(f.fps or 0 for f in top)
+    top = [f for f in top if (f.fps or 0) == fps]
+
+    order = _VIDEO_CODEC_ORDER[opts.container]
+    video = min(
+        (f for f in top if f.filesize),
+        key=lambda f: (_codec_rank(f.vcodec, order), not f.has_audio, -(f.filesize or 0)),
+        default=None,
+    )
+    if video is None or video.filesize is None:
+        return None
+    if video.has_audio:
+        return video.filesize
+    audio = _audio_size(info, opts.container)
+    return video.filesize + audio if audio is not None else None

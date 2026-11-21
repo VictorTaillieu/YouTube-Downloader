@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QTimer
 
-from ytdownloader.jobs import DownloadJob, LineSplitter, ToolTask, partial_paths
+from ytdownloader.jobs import DownloadJob, InfoJob, LineSplitter, ToolTask, partial_paths
 from ytdownloader.tools import ToolError
 from ytdownloader.ytdlp import PROGRESS_MARKER
 
@@ -143,3 +143,34 @@ def test_tool_task_reports_result_and_errors(qapp):
     task.start()
     assert run_until(signals) == ("failed", ("nope",))
     task.wait()
+
+
+def info_outcomes(job):
+    return {"ok": job.succeeded, "failed": job.failed, "cancelled": job.cancelled}
+
+
+def test_info_job_parses_metadata(qapp):
+    script = """print('{"id": "x", "title": "Clip é", "formats": []}')"""
+    job = InfoJob(sys.executable, ["-c", script])
+    signals = info_outcomes(job)
+    job.start()
+    name, args = run_until(signals)
+    assert name == "ok"
+    assert args[0].title == "Clip é"
+
+
+def test_info_job_reports_error(qapp):
+    script = "import sys; print('ERROR: private video', file=sys.stderr); sys.exit(1)"
+    job = InfoJob(sys.executable, ["-c", script])
+    signals = info_outcomes(job)
+    job.start()
+    assert run_until(signals) == ("failed", ("private video",))
+
+
+def test_info_job_can_be_cancelled(qapp):
+    job = InfoJob(sys.executable, ["-c", "import time; time.sleep(60)"])
+    signals = info_outcomes(job)
+    job.start()
+    assert job.wait(0) is False
+    job.cancel()
+    assert run_until(signals)[0] == "cancelled"

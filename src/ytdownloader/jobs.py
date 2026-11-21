@@ -15,7 +15,14 @@ from typing import Any
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QThread, Signal
 
 from .tools import ToolError
-from .ytdlp import FinalFile, Progress, is_subtitle_file, parse_output_line, postprocess_stage
+from .ytdlp import (
+    FinalFile,
+    Progress,
+    is_subtitle_file,
+    parse_info_json,
+    parse_output_line,
+    postprocess_stage,
+)
 
 _STREAM_FILE = re.compile(r"^(?P<stem>.+)\.f[\w-]+\.\w+$")
 
@@ -81,6 +88,88 @@ def kill_process_tree(pid: int) -> None:
             os.killpg(pid, signal.SIGKILL)
 
 
+def _new_process(program: str, args: Sequence[str], parent: QObject) -> QProcess:
+    """QProcess for yt-dlp: UTF-8 output, and its own session so the whole tree can be killed."""
+    process = QProcess(parent)
+    process.setProgram(program)
+    process.setArguments(list(args))
+    env = QProcessEnvironment.systemEnvironment()
+    env.insert("PYTHONUTF8", "1")
+    env.insert("PYTHONIOENCODING", "utf-8")
+    process.setProcessEnvironment(env)
+    if not sys.platform.startswith("win"):
+        process.setUnixProcessParameters(QProcess.UnixProcessFlag.CreateNewSession)
+    return process
+
+
+def _terminate(process: QProcess) -> None:
+    pid = process.processId()
+    if not pid:
+        process.kill()
+        return
+    try:
+        kill_process_tree(pid)
+    except (OSError, subprocess.SubprocessError):
+        process.kill()
+
+
+class InfoJob(QObject):
+    """Fetch video metadata. Emits one of the signals below, then deletes itself."""
+
+    succeeded = Signal(object)  # VideoInfo
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, program: str, args: Sequence[str], parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._cancelling = False
+        self._done = False
+        self._process = _new_process(program, args, self)
+        self._process.finished.connect(self._on_finished)
+        self._process.errorOccurred.connect(self._on_error)
+
+    def start(self) -> None:
+        self._process.start()
+
+    def cancel(self) -> None:
+        if self._done or self._process.state() == QProcess.ProcessState.NotRunning:
+            return
+        self._cancelling = True
+        _terminate(self._process)
+
+    def wait(self, msecs: int = 5000) -> bool:
+        return self._process.waitForFinished(msecs)
+
+    def _on_finished(self, code: int, status: QProcess.ExitStatus) -> None:
+        if self._done:
+            return
+        self._done = True
+        if self._cancelling:
+            self.cancelled.emit()
+        elif status == QProcess.ExitStatus.NormalExit and code == 0:
+            output = self._process.readAllStandardOutput().data().decode("utf-8", "replace")
+            try:
+                self.succeeded.emit(parse_info_json(output))
+            except ValueError:
+                self.failed.emit("Réponse de yt-dlp illisible.")
+        else:
+            self.failed.emit(self._error_message(code))
+        self.deleteLater()
+
+    def _error_message(self, code: int) -> str:
+        stderr = self._process.readAllStandardError().data().decode("utf-8", "replace")
+        errors = [line for line in stderr.splitlines() if line.startswith("ERROR:")]
+        if errors:
+            return errors[-1].removeprefix("ERROR:").strip()
+        return f"yt-dlp s'est arrêté avec le code {code}."
+
+    def _on_error(self, error: QProcess.ProcessError) -> None:
+        if error == QProcess.ProcessError.FailedToStart and not self._done:
+            self._done = True
+            self.failed.emit(f"Impossible de lancer yt-dlp : {self._process.errorString()}")
+            self.deleteLater()
+
+
 class DownloadJob(QObject):
     """One yt-dlp run. Emits exactly one of ``succeeded``, ``failed`` or ``cancelled``."""
 
@@ -105,15 +194,7 @@ class DownloadJob(QObject):
         self._cancelling = False
         self._done = False
 
-        self._process = QProcess(self)
-        self._process.setProgram(program)
-        self._process.setArguments(list(args))
-        env = QProcessEnvironment.systemEnvironment()
-        env.insert("PYTHONUTF8", "1")
-        env.insert("PYTHONIOENCODING", "utf-8")
-        self._process.setProcessEnvironment(env)
-        if not sys.platform.startswith("win"):
-            self._process.setUnixProcessParameters(QProcess.UnixProcessFlag.CreateNewSession)
+        self._process = _new_process(program, args, self)
         self._process.readyReadStandardOutput.connect(self._read_stdout)
         self._process.readyReadStandardError.connect(self._read_stderr)
         self._process.finished.connect(self._on_finished)
@@ -130,14 +211,7 @@ class DownloadJob(QObject):
         if self._done or not self.running:
             return
         self._cancelling = True
-        pid = self._process.processId()
-        if pid:
-            try:
-                kill_process_tree(pid)
-            except (OSError, subprocess.SubprocessError):
-                self._process.kill()
-        else:
-            self._process.kill()
+        _terminate(self._process)
 
     def wait(self, msecs: int = 5000) -> bool:
         return self._process.waitForFinished(msecs)
