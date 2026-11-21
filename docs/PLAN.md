@@ -39,8 +39,8 @@ Ce plan est copié dans le dépôt sous `docs/PLAN.md`. À la fin de chaque ité
 
 | It. | Sujet | Statut |
 |-----|-------|--------|
-| 0 | Nettoyage & squelette projet | ✅ fait (à relire/commiter) |
-| 1 | Backend (outils, args, parsing) | ⏳ à faire |
+| 0 | Nettoyage & squelette projet | ✅ fait |
+| 1 | Backend (outils, args, parsing) | ✅ fait (à relire/commiter) |
 | 2 | UI PySide6 minimale non bloquante | ⏳ à faire |
 | 3 | Analyse URL & choix format/qualité | ⏳ à faire |
 | 4 | Sous-titres | ⏳ à faire |
@@ -65,6 +65,35 @@ Fait :
 - `uv sync && uv run ruff check && uv run ruff format --check src tests && uv run pytest`
 - `uv run python -m ytdownloader` affiche le message placeholder.
 - L'ancien `python ytdownload.py` démarre toujours (avec un `yt-dlp` présent dans le PATH).
+
+#### It. 1 — 2026-11-20
+Fait :
+- `src/ytdownloader/tools.py` (sans dépendance Qt) : dossier de données par OS (`%LOCALAPPDATA%\ytdownloader`, `$XDG_DATA_HOME/ytdownloader`, surcharge via `$YTDOWNLOADER_DATA_DIR`), recherche des outils (copie gérée dans `<data>/bin` **puis** PATH), détection de version, installation depuis les releases officielles GitHub (yt-dlp, Deno, ffmpeg+ffprobe via `yt-dlp/FFmpeg-Builds`) avec callback de progression et remplacement atomique, mise à jour `yt-dlp -U` (refusée pour une copie non gérée), pas de fenêtre console sous Windows (`CREATE_NO_WINDOW`).
+- CLI : `python -m ytdownloader.tools [--check] [--install yt-dlp|deno|ffmpeg|all] [--update]`.
+- `src/ytdownloader/ytdlp.py` (pur, testable) :
+  - `DownloadOptions` / `SubtitleOptions` / `ToolPaths` → `build_download_args()`, `build_info_args()`.
+  - Vidéo : `-f bv*[height<=H]+ba/b[height<=H]/bv*+ba/b` + `-S` selon le conteneur (mp4 → H.264/AAC pour lire partout, webm → VP9/Opus, mkv → meilleure qualité) + `--merge-output-format` / `--remux-video`.
+  - Audio : `-f ba/b -x [--audio-format X --audio-quality Q]` (`best` = garde le format d'origine sans réencodage).
+  - Sous-titres : `--write-subs [--write-auto-subs] --sub-langs … [--embed-subs] --convert-subs srt` (pas de conversion si intégration en webm, jamais d'intégration en mode audio).
+  - Toujours : `--no-playlist`, `--no-mtime`, `--paths`, URL après `--`, `--ffmpeg-location` et `--js-runtimes deno:<chemin>` si connus.
+  - Protocole de sortie : lignes `[ytdl-progress]{json}` et `[ytdl-file]<chemin final>` → `parse_output_line()` renvoie `Progress` (fraction, vitesse, ETA, fichier) / `FinalFile` / `None` (log).
+  - `parse_info()` → `VideoInfo` (titre, auteur, durée, miniature, formats avec taille exacte ou approx., hauteurs dispo, sous-titres manuels et auto).
+- Tests : `tests/test_ytdlp.py`, `tests/test_tools.py` (55 tests).
+- Validé en réel (Linux) : installation des 3 outils dans un dossier temporaire, `-U`, puis « Me at the zoo » en 240p mp4 (H.264/AAC) + sous-titres en `.srt`, et en mp3 ; Deno résout bien les challenges JS (`[jsc:deno]`).
+
+Écarts :
+- Ordre de recherche **copie gérée puis PATH** (au lieu de PATH puis copie gérée) : un yt-dlp système (apt/pip) est souvent ancien et non mettable à jour sans root ; dès que l'app a installé sa copie, elle l'utilise.
+- ffmpeg téléchargeable aussi sous Linux (build statique), en repli seulement : ~350 Mo avec ffprobe, donc l'UI privilégiera `sudo apt install ffmpeg` si aucun ffmpeg système n'est trouvé.
+- Dossier de données calculé en Python pur plutôt qu'avec `QStandardPaths` (testable sans Qt, utilisable en CLI).
+- Modèle de nom inchangé (`%(title)s.%(ext)s`).
+
+À noter pour l'It. 2 :
+- Les sous-titres émettent aussi des événements de progression (fichier `.vtt`), et une vidéo « bv+ba » en émet deux séries (vidéo puis audio) : l'UI doit afficher l'étape en cours plutôt qu'une seule barre qui repart à 0.
+
+À tester :
+- `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
+- `uv run python -m ytdownloader.tools --check`
+- Dans un dossier jetable : `YTDOWNLOADER_DATA_DIR=/tmp/ytd uv run python -m ytdownloader.tools --install all` puis `--update` puis `--check` (les 3 outils en « managed »).
 
 ## Itérations (chacune testable et commitée par toi)
 
