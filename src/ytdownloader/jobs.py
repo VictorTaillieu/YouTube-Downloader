@@ -22,6 +22,7 @@ from .ytdlp import (
     parse_info_json,
     parse_output_line,
     postprocess_stage,
+    subtitle_failure,
 )
 
 _STREAM_FILE = re.compile(r"^(?P<stem>.+)\.f[\w-]+\.\w+$")
@@ -191,6 +192,8 @@ class DownloadJob(QObject):
         self._written: set[str] = set()
         self._final: Path | None = None
         self._last_error: str | None = None
+        self.failed_subtitles: list[str] = []
+        """Languages yt-dlp could not fetch; the download itself may still succeed."""
         self._cancelling = False
         self._done = False
 
@@ -240,6 +243,8 @@ class DownloadJob(QObject):
         if not line.strip():
             return
         self.log.emit(line)
+        if (language := subtitle_failure(line)) and language not in self.failed_subtitles:
+            self.failed_subtitles.append(language)
         if line.startswith("ERROR:"):
             self._last_error = line.removeprefix("ERROR:").strip()
 
@@ -249,6 +254,12 @@ class DownloadJob(QObject):
             return
         # A file only reported as "finished" already existed: never delete it on cancel.
         if event.status == "downloading":
+            if name not in self._written and is_subtitle_file(name):
+                # Subtitles are converted before the video downloads: the .srt is ours too,
+                # unless it was already there.
+                converted = (self._output_dir / name).with_suffix(".srt")
+                if not converted.exists():
+                    self._written.add(str(converted))
             self._written.add(name)
         if name in self._streams:
             return

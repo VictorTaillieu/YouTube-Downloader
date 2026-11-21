@@ -37,6 +37,7 @@ from ..ytdlp import (
     format_progress,
     format_size,
     is_youtube_url,
+    subtitle_choices,
 )
 from .options_panel import OptionsPanel
 from .preview import VideoPreview
@@ -307,6 +308,7 @@ class MainWindow(QMainWindow):
         self._info = info
         self.preview.show_info(info)
         self.options_panel.set_heights(info.heights)
+        self.options_panel.subtitles.set_choices(subtitle_choices(info))
         self.options_panel.setVisible(True)
         self._refresh_size()
         self.stage_label.setText("Prêt.")
@@ -390,7 +392,11 @@ class MainWindow(QMainWindow):
 
     def _on_succeeded(self, final: Path | None) -> None:
         self._last_dir = final.parent if final else Path(self.dir_edit.text())
-        self._end_job(f"Terminé : {final.name}" if final else "Terminé.", 1.0)
+        missing = self._job.failed_subtitles if self._job else []
+        stage = f"Terminé : {final.name}" if final else "Terminé."
+        if missing:
+            stage += f"\nSous-titres non récupérés : {', '.join(missing)} (réessaie plus tard)."
+        self._end_job(stage, 1.0)
         self.url_edit.clear()
 
     def _on_failed(self, message: str) -> None:

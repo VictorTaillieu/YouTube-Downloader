@@ -1,14 +1,14 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QEventLoop, QSettings, QTimer
+from PySide6.QtCore import QEventLoop, QSettings, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 
 from ytdownloader import tools
 from ytdownloader.tools import Tool
 from ytdownloader.ui.main_window import MainWindow
 from ytdownloader.ui.options_panel import pick_height
-from ytdownloader.ytdlp import Format, VideoInfo
+from ytdownloader.ytdlp import Format, SubtitleChoice, VideoInfo
 
 
 def wait_for(condition, timeout_ms=5000):
@@ -140,6 +140,35 @@ def test_height_preference_survives_a_lower_video(make_window, tmp_path):
     panel.set_heights([480, 360])
     assert panel.height_combo.currentData() == 480
     assert panel._settings.value("max_height", 0, int) == 1080
+
+
+def test_subtitle_selection_builds_options(make_window):
+    window = make_window(all_tools())
+    analysed(window)
+    panel = window.options_panel.subtitles
+    assert not panel.toggle.isEnabled()
+    panel.set_choices(
+        [SubtitleChoice("en", "English", False), SubtitleChoice("fr", "French", True)]
+    )
+    assert panel.toggle.text() == "Sous-titres : aucun"
+    assert panel.options().languages == []
+    panel.language_list.item(0).setCheckState(Qt.CheckState.Checked)
+    assert panel.options().languages == ["en"] and not panel.options().include_auto
+    panel.language_list.item(1).setCheckState(Qt.CheckState.Checked)
+    assert panel.options().include_auto
+    assert panel.toggle.text() == "Sous-titres : en, fr"
+    panel.filter_edit.setText("fren")
+    assert panel.language_list.item(0).isHidden()
+    assert panel.options().languages == ["en", "fr"]  # a filtered-out choice stays selected
+
+
+def test_new_video_clears_subtitle_selection(make_window):
+    window = make_window(all_tools())
+    panel = window.options_panel.subtitles
+    panel.set_choices([SubtitleChoice("en", "English", False)])
+    panel.language_list.item(0).setCheckState(Qt.CheckState.Checked)
+    analysed(window)
+    assert panel.options().languages == []
 
 
 def test_pick_height():

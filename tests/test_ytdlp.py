@@ -127,6 +127,37 @@ def test_subtitles_embedded_in_webm_stay_vtt():
     assert "--convert-subs" not in args
 
 
+def test_subtitle_failure_does_not_abort_and_embed_leaves_no_file():
+    subs = SubtitleOptions(["fr"], embed=True)
+    args = ytdlp.build_download_args(DownloadOptions(URL, OUT, subtitles=subs))
+    assert "--ignore-errors" in args
+    assert _value(args, "--compat-options") == "no-keep-subs"
+    plain = ytdlp.build_download_args(DownloadOptions(URL, OUT))
+    assert "--ignore-errors" not in plain
+
+
+def test_subtitle_failure_line():
+    line = "WARNING: Unable to download video subtitles for 'pt-BR': HTTP Error 429"
+    assert ytdlp.subtitle_failure(line) == "pt-BR"
+    assert ytdlp.subtitle_failure("[info] Writing video subtitles") is None
+
+
+def test_subtitle_choices_order_and_dedup():
+    info = ytdlp.parse_info(
+        {
+            "id": "x",
+            "subtitles": {"fr": [{"name": "French"}], "de": [{"name": "German"}]},
+            "automatic_captions": {
+                "fr": [{"name": "French"}],
+                "ab": [{"name": "Abkhazian"}],
+                "en-orig": [{"name": "English (Original)"}],
+            },
+        }
+    )
+    choices = [(c.code, c.auto) for c in ytdlp.subtitle_choices(info)]
+    assert choices == [("fr", False), ("de", False), ("en-orig", True), ("ab", True)]
+
+
 def test_subtitles_never_embedded_in_audio():
     subs = SubtitleOptions(["fr"], embed=True)
     args = ytdlp.build_download_args(DownloadOptions(URL, OUT, mode="audio", subtitles=subs))

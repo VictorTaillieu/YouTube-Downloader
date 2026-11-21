@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..ytdlp import AUDIO_FORMATS, VIDEO_CONTAINERS, DownloadOptions
+from .subtitles_panel import SubtitlesPanel
 
 _AUDIO_LABELS = {
     "best": "Original (sans conversion)",
@@ -74,12 +75,14 @@ class OptionsPanel(QWidget):
         self.stack = QStackedWidget()
         self.stack.addWidget(video_page)
         self.stack.addWidget(audio_page)
+        self.subtitles = SubtitlesPanel(settings)
         self.size_label = QLabel()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(modes)
         layout.addWidget(self.stack)
+        layout.addWidget(self.subtitles)
         layout.addWidget(self.size_label)
 
         self._load()
@@ -93,6 +96,7 @@ class OptionsPanel(QWidget):
         self.audio_radio.setChecked(audio)
         self.video_radio.setChecked(not audio)
         self.stack.setCurrentIndex(int(audio))
+        self.subtitles.set_audio_mode(audio)
         self._select(self.container_combo, self._settings.value("container", "mp4", str))
         self._select(self.audio_format_combo, self._settings.value("audio_format", "mp3", str))
 
@@ -108,7 +112,9 @@ class OptionsPanel(QWidget):
         self._settings.setValue("audio_format", self.audio_format_combo.currentData())
 
     def _on_mode(self) -> None:
-        self.stack.setCurrentIndex(int(self.audio_radio.isChecked()))
+        audio = self.audio_radio.isChecked()
+        self.stack.setCurrentIndex(int(audio))
+        self.subtitles.set_audio_mode(audio)
         self._on_choice()
 
     def _on_height_chosen(self) -> None:
@@ -137,4 +143,5 @@ class OptionsPanel(QWidget):
             max_height=self.height_combo.currentData() or None,
             container=self.container_combo.currentData(),
             audio_format=self.audio_format_combo.currentData(),
+            subtitles=self.subtitles.options(),
         )

@@ -13,6 +13,7 @@ Any other line is a regular log line.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -161,12 +162,21 @@ def _subtitle_args(opts: DownloadOptions) -> list[str]:
     subs = opts.subtitles
     if not subs.languages:
         return []
-    args = ["--write-subs", "--sub-langs", ",".join(subs.languages)]
+    # --ignore-errors: a subtitle refused by YouTube (often HTTP 429) must not lose the video.
+    args = [
+        "--ignore-errors",
+        "--sleep-subtitles",
+        "1",
+        "--write-subs",
+        "--sub-langs",
+        ",".join(subs.languages),
+    ]
     if subs.include_auto:
         args.append("--write-auto-subs")
     embed = subs.embed and opts.mode == "video"
     if embed:
-        args.append("--embed-subs")
+        # Without no-keep-subs, --write-subs leaves the .srt files next to the video.
+        args += ["--embed-subs", "--compat-options", "no-keep-subs"]
     # webm can only hold WebVTT subtitles: keep the original format when embedding there.
     if not (embed and opts.container == "webm"):
         args += ["--convert-subs", "srt"]
@@ -247,6 +257,7 @@ _POSTPROCESS_STAGES = {
     "[EmbedSubtitle]": "Intégration des sous-titres…",
 }
 SUBTITLE_EXTENSIONS = (".vtt", ".srt", ".ass", ".ttml", ".srv1", ".srv2", ".srv3", ".json3")
+_SUBTITLE_FAILURE = re.compile(r"Unable to download video subtitles for '([^']+)'")
 
 
 def postprocess_stage(line: str) -> str | None:
@@ -257,6 +268,12 @@ def postprocess_stage(line: str) -> str | None:
 
 def is_subtitle_file(filename: str) -> bool:
     return filename.lower().endswith(SUBTITLE_EXTENSIONS)
+
+
+def subtitle_failure(line: str) -> str | None:
+    """Language code of a subtitle download failure announced by a log line, if any."""
+    match = _SUBTITLE_FAILURE.search(line)
+    return match[1] if match else None
 
 
 def is_youtube_url(text: str) -> bool:
@@ -360,6 +377,29 @@ def _sub_languages(tracks: Any) -> dict[str, str]:
             name = next((e["name"] for e in entries if isinstance(e, dict) and e.get("name")), code)
         languages[code] = name
     return languages
+
+
+@dataclass(frozen=True)
+class SubtitleChoice:
+    code: str
+    name: str
+    auto: bool
+
+
+def subtitle_choices(info: VideoInfo) -> list[SubtitleChoice]:
+    """Selectable languages: manual first, then automatic with the original track on top.
+
+    A language with a manual track is not repeated as automatic: yt-dlp prefers the manual one.
+    """
+    manual = [SubtitleChoice(code, name, False) for code, name in info.subtitles.items()]
+    auto = [
+        SubtitleChoice(code, name, True)
+        for code, name in info.auto_subtitles.items()
+        if code not in info.subtitles
+    ]
+    manual.sort(key=lambda c: c.name.casefold())
+    auto.sort(key=lambda c: (not c.code.endswith("-orig"), c.name.casefold()))
+    return manual + auto
 
 
 def _codec(value: Any) -> str | None:

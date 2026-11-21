@@ -7,7 +7,7 @@ from PySide6.QtCore import QEventLoop, QTimer
 
 from ytdownloader.jobs import DownloadJob, InfoJob, LineSplitter, ToolTask, partial_paths
 from ytdownloader.tools import ToolError
-from ytdownloader.ytdlp import PROGRESS_MARKER
+from ytdownloader.ytdlp import PROGRESS_MARKER, Progress
 
 
 def run_until(signals, timeout_ms=10000):
@@ -28,6 +28,26 @@ def outcomes(job):
 
 def python_job(script, tmp_path):
     return DownloadJob(sys.executable, ["-u", "-c", script], tmp_path)
+
+
+def _subtitle_event(path):
+    return Progress("downloading", 1, 2, None, None, str(path))
+
+
+def test_cancel_removes_converted_subtitle(qapp, tmp_path):
+    job = DownloadJob("true", [], tmp_path)
+    job._track(_subtitle_event(tmp_path / "a.en.vtt"))
+    (tmp_path / "a.en.srt").write_text("converted")
+    job._cleanup()
+    assert not (tmp_path / "a.en.srt").exists()
+
+
+def test_cancel_keeps_preexisting_subtitle(qapp, tmp_path):
+    (tmp_path / "a.en.srt").write_text("mine")
+    job = DownloadJob("true", [], tmp_path)
+    job._track(_subtitle_event(tmp_path / "a.en.vtt"))
+    job._cleanup()
+    assert (tmp_path / "a.en.srt").read_text() == "mine"
 
 
 def test_line_splitter_handles_partial_chunks():

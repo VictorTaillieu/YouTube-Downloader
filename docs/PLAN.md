@@ -42,8 +42,8 @@ Ce plan est copié dans le dépôt sous `docs/PLAN.md`. À la fin de chaque ité
 | 0 | Nettoyage & squelette projet | ✅ fait |
 | 1 | Backend (outils, args, parsing) | ✅ fait |
 | 2 | UI PySide6 minimale non bloquante | ✅ fait |
-| 3 | Analyse URL & choix format/qualité | ✅ fait (à relire/commiter) |
-| 4 | Sous-titres | ⏳ à faire |
+| 3 | Analyse URL & choix format/qualité | ✅ fait |
+| 4 | Sous-titres | ✅ fait (à relire/commiter) |
 | 5 | Packaging & CI | ⏳ à faire |
 
 ### Journal
@@ -133,6 +133,28 @@ Fait :
 À tester :
 - `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
 - `uv run python -m ytdownloader` : vidéo 4K en 1440p ou plus, vidéo limitée à 720p, audio MP3 ; vérifier les fichiers (`ffprobe`), la miniature et les choix conservés au redémarrage.
+- Windows : non testé.
+
+#### It. 4 — 2026-11-21
+Fait :
+- `ui/subtitles_panel.py` : section repliable avec filtre, langues cochables (manuelles d'abord, puis auto avec la piste originale en tête), sortie en `.srt` séparés ou intégrée à la vidéo. Le mode de sortie est conservé, la sélection de langues repart à zéro pour chaque vidéo.
+- Une langue disponible en manuel n'est pas répétée en auto.
+- Un sous-titre refusé (souvent HTTP 429) ne fait plus échouer le téléchargement : la vidéo est conservée et les langues manquantes sont affichées à la fin.
+- Intégration sans `.srt` résiduel (`--compat-options no-keep-subs`).
+- Annulation : le `.srt` converti est supprimé, sauf s'il existait avant le téléchargement.
+- Tests : 85 au total.
+- Validé en réel (Linux, sans affichage) : intégration MP4, MKV (2 langues) et WebM vérifiée avec ffprobe, `.srt` séparés, mode audio, échec 429 sur une langue, vidéo indisponible toujours signalée en erreur, annulation sans fichier résiduel.
+
+Écarts :
+- Filtre ajouté à la liste : une vidéo peut proposer plus de 160 langues auto.
+- `--sleep-subtitles 1` entre chaque sous-titre pour limiter les 429, qui restent possibles.
+
+Limite connue :
+- Les `.srt` auto contiennent des répétitions (texte défilant de YouTube, blocs de 10 ms). Les sous-titres manuels ne sont pas concernés.
+
+À tester :
+- `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
+- `uv run python -m ytdownloader` : vidéo avec sous-titres manuels et auto, en `.srt` puis intégrés (MP4, MKV), filtre, mode audio, annulation.
 - Windows : non testé.
 
 ## Itérations (chacune testable et commitée par toi)
