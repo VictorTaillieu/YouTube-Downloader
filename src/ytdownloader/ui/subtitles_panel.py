@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QHBoxLayout,
     QLineEdit,
     QListWidget,
@@ -38,6 +39,7 @@ class SubtitlesPanel(QWidget):
         )
         self.language_list = QListWidget()
         self.language_list.setFixedHeight(_LIST_HEIGHT)
+        self.translations_check = QCheckBox()
 
         self.separate_radio = QRadioButton("Fichiers .srt séparés")
         self.embed_radio = QRadioButton("Intégrés à la vidéo")
@@ -59,6 +61,7 @@ class SubtitlesPanel(QWidget):
         body.setContentsMargins(0, 0, 0, 0)
         body.addWidget(self.filter_edit)
         body.addWidget(self.language_list)
+        body.addWidget(self.translations_check)
         body.addWidget(self.output_row)
 
         layout = QVBoxLayout(self)
@@ -67,7 +70,8 @@ class SubtitlesPanel(QWidget):
         layout.addWidget(self.body)
 
         self.toggle.toggled.connect(self._on_toggled)
-        self.filter_edit.textChanged.connect(self._apply_filter)
+        self.filter_edit.textChanged.connect(self._refresh_visibility)
+        self.translations_check.toggled.connect(self._refresh_visibility)
         self.language_list.itemChanged.connect(self._refresh_summary)
         self.embed_radio.toggled.connect(self._on_embed)
         self.set_choices([])
@@ -92,9 +96,14 @@ class SubtitlesPanel(QWidget):
             item.setData(_ROLE, choice)
             self.language_list.addItem(item)
         self.language_list.blockSignals(False)
+        translations = sum(choice.translated for choice in choices)
+        self.translations_check.setText(f"Afficher les traductions automatiques ({translations})")
+        self.translations_check.setVisible(translations > 0)
+        self.translations_check.setChecked(False)
         self.filter_edit.clear()
         self.toggle.setChecked(False)
         self.toggle.setEnabled(bool(choices))
+        self._refresh_visibility()
         self._refresh_summary()
 
     def set_audio_mode(self, audio: bool) -> None:
@@ -116,10 +125,20 @@ class SubtitlesPanel(QWidget):
     def _on_embed(self, embed: bool) -> None:
         self._settings.setValue(_EMBED_KEY, embed)
 
-    def _apply_filter(self, text: str) -> None:
-        needle = text.strip().casefold()
+    def _refresh_visibility(self) -> None:
+        # A search covers every language; a selected translation never disappears from the list.
+        needle = self.filter_edit.text().strip().casefold()
+        show_translations = self.translations_check.isChecked()
         for item in self._items():
-            item.setHidden(needle not in item.text().casefold())
+            if needle:
+                visible = needle in item.text().casefold()
+            else:
+                visible = (
+                    show_translations
+                    or not item.data(_ROLE).translated
+                    or item.checkState() == Qt.CheckState.Checked
+                )
+            item.setHidden(not visible)
 
     def _refresh_summary(self) -> None:
         if not self.language_list.count():

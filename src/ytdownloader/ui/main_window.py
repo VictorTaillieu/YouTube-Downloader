@@ -36,6 +36,7 @@ from ..ytdlp import (
     estimate_size,
     format_progress,
     format_size,
+    friendly_error,
     is_youtube_url,
     subtitle_choices,
 )
@@ -319,7 +320,7 @@ class MainWindow(QMainWindow):
         if job is not self._info_job:
             return
         self._info_job = None
-        self.stage_label.setText(f"Échec de l'analyse : {message}")
+        self.stage_label.setText(f"Échec de l'analyse : {friendly_error(message)}")
         self._append_log(f"Échec de l'analyse : {message}")
         self._set_bar(0.0)
         self._update_controls()
@@ -400,7 +401,7 @@ class MainWindow(QMainWindow):
         self.url_edit.clear()
 
     def _on_failed(self, message: str) -> None:
-        self._end_job(f"Échec : {message}", 0.0)
+        self._end_job(f"Échec : {friendly_error(message)}", 0.0)
         self._append_log(f"Échec : {message}")
 
     def _on_cancelled(self) -> None:

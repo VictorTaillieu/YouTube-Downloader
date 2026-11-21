@@ -10,12 +10,17 @@ from ytdownloader.tools import ToolError
 from ytdownloader.ytdlp import PROGRESS_MARKER, Progress
 
 
-def run_until(signals, timeout_ms=10000):
-    """Spin the event loop until one of the signals fires; return its name and args."""
+def run_until(signals, timeout_ms=10000, start=None):
+    """Spin the event loop until one of the signals fires; return its name and args.
+
+    A thread must be passed as ``start``: it could finish before the signals are connected.
+    """
     loop = QEventLoop()
     result = []
     for name, signal in signals.items():
         signal.connect(lambda *args, n=name: (result.append((n, args)), loop.quit()))
+    if start:
+        start()
     QTimer.singleShot(timeout_ms, loop.quit)
     loop.exec()
     assert result, "timed out"
@@ -144,15 +149,17 @@ def _alive(pid):
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    stat = Path(f"/proc/{pid}/stat")
-    return stat.exists() and stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except (FileNotFoundError, ProcessLookupError):  # exited since the check above
+        return False
+    return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
 def test_tool_task_reports_result_and_errors(qapp):
     task = ToolTask(lambda report: 42)
     signals = {"ok": task.succeeded, "failed": task.failed}
-    task.start()
-    assert run_until(signals) == ("ok", (42,))
+    assert run_until(signals, start=task.start) == ("ok", (42,))
     task.wait()
 
     def boom(report):
@@ -160,8 +167,7 @@ def test_tool_task_reports_result_and_errors(qapp):
 
     task = ToolTask(boom)
     signals = {"ok": task.succeeded, "failed": task.failed}
-    task.start()
-    assert run_until(signals) == ("failed", ("nope",))
+    assert run_until(signals, start=task.start) == ("failed", ("nope",))
     task.wait()
 
 

@@ -258,6 +258,11 @@ _POSTPROCESS_STAGES = {
 }
 SUBTITLE_EXTENSIONS = (".vtt", ".srt", ".ass", ".ttml", ".srv1", ".srv2", ".srv3", ".json3")
 _SUBTITLE_FAILURE = re.compile(r"Unable to download video subtitles for '([^']+)'")
+_YOUTUBE_BLOCKED = re.compile(r"not a bot|HTTP Error 429", re.IGNORECASE)
+YOUTUBE_BLOCKED_MESSAGE = (
+    "YouTube bloque temporairement les requêtes depuis ta connexion. "
+    "Réessaie dans quelques minutes."
+)
 
 
 def postprocess_stage(line: str) -> str | None:
@@ -274,6 +279,11 @@ def subtitle_failure(line: str) -> str | None:
     """Language code of a subtitle download failure announced by a log line, if any."""
     match = _SUBTITLE_FAILURE.search(line)
     return match[1] if match else None
+
+
+def friendly_error(message: str) -> str:
+    """Readable text for a yt-dlp error when YouTube is rate-limiting this connection."""
+    return YOUTUBE_BLOCKED_MESSAGE if _YOUTUBE_BLOCKED.search(message) else message
 
 
 def is_youtube_url(text: str) -> bool:
@@ -384,16 +394,20 @@ class SubtitleChoice:
     code: str
     name: str
     auto: bool
+    translated: bool = False
+    """Machine translation of the automatic track: often refused by YouTube (HTTP 429)."""
 
 
 def subtitle_choices(info: VideoInfo) -> list[SubtitleChoice]:
     """Selectable languages: manual first, then automatic with the original track on top.
 
     A language with a manual track is not repeated as automatic: yt-dlp prefers the manual one.
+    Translations can only be told apart when YouTube identifies the original ("-orig") track.
     """
+    has_original = any(code.endswith("-orig") for code in info.auto_subtitles)
     manual = [SubtitleChoice(code, name, False) for code, name in info.subtitles.items()]
     auto = [
-        SubtitleChoice(code, name, True)
+        SubtitleChoice(code, name, True, has_original and not code.endswith("-orig"))
         for code, name in info.auto_subtitles.items()
         if code not in info.subtitles
     ]

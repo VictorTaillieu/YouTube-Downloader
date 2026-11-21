@@ -8,7 +8,7 @@ from ytdownloader import tools
 from ytdownloader.tools import Tool
 from ytdownloader.ui.main_window import MainWindow
 from ytdownloader.ui.options_panel import pick_height
-from ytdownloader.ytdlp import Format, SubtitleChoice, VideoInfo
+from ytdownloader.ytdlp import YOUTUBE_BLOCKED_MESSAGE, Format, SubtitleChoice, VideoInfo
 
 
 def wait_for(condition, timeout_ms=5000):
@@ -160,6 +160,42 @@ def test_subtitle_selection_builds_options(make_window):
     panel.filter_edit.setText("fren")
     assert panel.language_list.item(0).isHidden()
     assert panel.options().languages == ["en", "fr"]  # a filtered-out choice stays selected
+
+
+def test_translations_are_hidden_until_requested_or_searched(make_window):
+    window = make_window(all_tools())
+    panel = window.options_panel.subtitles
+    panel.set_choices(
+        [
+            SubtitleChoice("en-orig", "English (Original)", True),
+            SubtitleChoice("fr", "French", True, translated=True),
+        ]
+    )
+    french = panel.language_list.item(1)
+    assert panel.translations_check.text().endswith("(1)")
+    assert french.isHidden()
+    panel.translations_check.setChecked(True)
+    assert not french.isHidden()
+    panel.translations_check.setChecked(False)
+    assert french.isHidden()
+    panel.filter_edit.setText("french")
+    assert not french.isHidden()
+    french.setCheckState(Qt.CheckState.Checked)
+    panel.filter_edit.clear()
+    assert not french.isHidden()  # selected: stays visible
+    assert panel.options().languages == ["fr"]
+
+
+def test_blocked_youtube_shows_clear_message_and_keeps_details_in_log(make_window):
+    window = make_window(all_tools())
+    window.url_edit.setText("https://youtu.be/abc")
+    window._analyze_timer.stop()
+    job = object()
+    window._info_job = job
+    raw = "[youtube] abc: Sign in to confirm you're not a bot."
+    window._on_info_failed(job, raw)
+    assert window.stage_label.text() == f"Échec de l'analyse : {YOUTUBE_BLOCKED_MESSAGE}"
+    assert raw in window.log_view.toPlainText()
 
 
 def test_new_video_clears_subtitle_selection(make_window):

@@ -158,6 +158,25 @@ def test_subtitle_choices_order_and_dedup():
     assert choices == [("fr", False), ("de", False), ("en-orig", True), ("ab", True)]
 
 
+def test_translations_need_an_identified_original_track():
+    with_original = ytdlp.parse_info(
+        {"id": "x", "automatic_captions": {"en-orig": [], "en": [], "fr": []}}
+    )
+    flags = {c.code: c.translated for c in ytdlp.subtitle_choices(with_original)}
+    assert flags == {"en-orig": False, "en": True, "fr": True}
+    without = ytdlp.parse_info({"id": "x", "automatic_captions": {"en": [], "fr": []}})
+    assert not any(c.translated for c in ytdlp.subtitle_choices(without))
+
+
+def test_friendly_error():
+    bot = "[youtube] abc: Sign in to confirm you're not a bot. Use --cookies"
+    assert ytdlp.friendly_error(bot) == ytdlp.YOUTUBE_BLOCKED_MESSAGE
+    assert ytdlp.friendly_error("HTTP Error 429: Too Many Requests") == (
+        ytdlp.YOUTUBE_BLOCKED_MESSAGE
+    )
+    assert ytdlp.friendly_error("Video unavailable") == "Video unavailable"
+
+
 def test_subtitles_never_embedded_in_audio():
     subs = SubtitleOptions(["fr"], embed=True)
     args = ytdlp.build_download_args(DownloadOptions(URL, OUT, mode="audio", subtitles=subs))

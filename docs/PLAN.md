@@ -142,15 +142,22 @@ Fait :
 - Un sous-titre refusé (souvent HTTP 429) ne fait plus échouer le téléchargement : la vidéo est conservée et les langues manquantes sont affichées à la fin.
 - Intégration sans `.srt` résiduel (`--compat-options no-keep-subs`).
 - Annulation : le `.srt` converti est supprimé, sauf s'il existait avant le téléchargement.
-- Tests : 85 au total.
+- Tests : 89 au total.
 - Validé en réel (Linux, sans affichage) : intégration MP4, MKV (2 langues) et WebM vérifiée avec ffprobe, `.srt` séparés, mode audio, échec 429 sur une langue, vidéo indisponible toujours signalée en erreur, annulation sans fichier résiduel.
 
 Écarts :
 - Filtre ajouté à la liste : une vidéo peut proposer plus de 160 langues auto.
 - `--sleep-subtitles 1` entre chaque sous-titre pour limiter les 429, qui restent possibles.
 
-Limite connue :
+Ajustements après essai :
+- Liste simplifiée : pistes manuelles et originale auto par défaut. Les traductions automatiques, souvent refusées par YouTube, sont derrière une case à cocher et restent trouvables avec le filtre. Si YouTube n'identifie pas de piste originale (`-orig`), toutes les pistes auto restent affichées.
+- Blocage YouTube (« not a bot », HTTP 429) : message clair dans l'interface, détail d'origine conservé dans le journal.
+- Deux tests instables corrigés (signaux branchés après le démarrage du thread, processus disparu pendant la lecture de `/proc`). L'app n'était pas concernée.
+- Pas de nouvelles tentatives automatiques (choix validé).
+
+Limites connues :
 - Les `.srt` auto contiennent des répétitions (texte défilant de YouTube, blocs de 10 ms). Les sous-titres manuels ne sont pas concernés.
+- Les pistes intégrées ne sont pas activées par défaut : il faut les choisir dans le lecteur.
 
 À tester :
 - `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
