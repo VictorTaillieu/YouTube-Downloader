@@ -44,7 +44,8 @@ Ce plan est copié dans le dépôt sous `docs/PLAN.md`. À la fin de chaque ité
 | 2 | UI PySide6 minimale non bloquante | ✅ fait |
 | 3 | Analyse URL & choix format/qualité | ✅ fait |
 | 4 | Sous-titres | ✅ fait (à relire/commiter) |
-| 5 | Packaging & CI | ⏳ à faire |
+| 5 | Mode Transcription | ⏳ à faire |
+| 6 | Packaging & CI | ⏳ à faire |
 
 ### Journal
 
@@ -197,7 +198,21 @@ Limites connues :
 - Args : `--write-subs [--write-auto-subs] --sub-langs fr,en --convert-subs srt [--embed-subs]`.
 - **Test** : vidéo avec sous-titres FR manuels + auto EN.
 
-### It. 5 — Packaging & CI
+### It. 5 — Mode Transcription
+Objectif : retirer les sous-titres du mode Audio et ajouter un troisième mode qui télécharge uniquement les sous-titres, enregistrés en `.txt` nettoyé, sans horaires. Rapide (aucun flux média) et sans ffmpeg. La qualité dépend de la piste : une piste auto peut manquer de ponctuation et n'est pas réécrite.
+
+- `transcript.py` (pur, testable) :
+  - `vtt_to_text()` à partir du VTT, seul format proposé par toutes les pistes observées.
+  - Retire en-tête, horaires, balises, entités HTML, marqueurs de locuteur `>>` et annotations entre crochets (`[Music]`).
+  - Répétitions : les pistes auto défilantes se reconnaissent à leurs balises de temps par mot, et seules ces pistes sont dédoublonnées. Un refrain d'une piste manuelle est conservé.
+  - Texte continu, nouveau paragraphe après une pause d'au moins 2 secondes.
+  - `unique_path()` : n'écrase jamais un fichier existant (`titre.fr (2).txt`).
+- `ytdlp.py` : mode `transcript` avec `--skip-download --write-subs [--write-auto-subs] --sub-langs … --sub-format vtt --ignore-errors --sleep-subtitles 1`. Plus aucun argument de sous-titres en mode Audio.
+- `jobs.py` : `TranscriptJob(DownloadJob)` télécharge dans un dossier temporaire, puis écrit `<titre>.<langue>.txt` (UTF-8) dans le dossier choisi. Une annulation ne laisse rien dans le dossier de sortie. Aucune langue récupérée = échec ; une partie seulement = succès avec les langues manquantes affichées.
+- UI : bouton **Transcription** (choix conservé), réutilisation de `SubtitlesPanel` avec liste dépliée et sans choix `.srt`/intégré, section masquée en Audio, taille estimée masquée. « Télécharger » est désactivé sans langue cochée, ffmpeg n'est pas exigé, message clair si la vidéo n'a pas de sous-titres.
+- **Test** : pytest (VTT auto défilant, refrain manuel, annotations, paragraphes, arguments des 3 modes, échec total, succès partiel, annulation), puis essai réel avec peu de requêtes : piste manuelle, piste auto originale, deux langues, annulation. Windows : noms de fichiers et encodage.
+
+### It. 6 — Packaging & CI
 - `pyinstaller` spec (one-folder sur Linux, onefile ou one-folder sur Windows), icône `.ico`/`.png`, chemins ressources via `importlib.resources`.
 - GitHub Actions : matrice `ubuntu-latest` / `windows-latest`, build sur tag `v*`, upload dans la Release. Lint + tests sur chaque PR.
 - README réécrit (captures, install, dépendances ffmpeg/Deno).
