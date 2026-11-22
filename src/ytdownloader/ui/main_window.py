@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import tools
-from ..jobs import DownloadJob, InfoJob, Reporter, ToolTask
+from ..jobs import DownloadJob, InfoJob, Reporter, ToolTask, TranscriptJob
 from ..tools import Tool
 from ..ytdlp import (
     Progress,
@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         self.url_edit.returnPressed.connect(self._on_return)
         self.analyze_button.clicked.connect(self.analyze)
         self._analyze_timer.timeout.connect(self.analyze)
-        self.options_panel.changed.connect(self._refresh_size)
+        self.options_panel.changed.connect(self._on_options_changed)
         self.download_button.clicked.connect(self.start_download)
         self.browse_button.clicked.connect(self._browse)
         self.cancel_button.clicked.connect(self.cancel_download)
@@ -195,10 +195,17 @@ class MainWindow(QMainWindow):
             and bool(self.url_edit.text().strip())
         )
 
+    @property
+    def _can_download(self) -> bool:
+        if self._busy or self._info is None or self._tools.get(tools.YT_DLP) is None:
+            return False
+        if self.options_panel.mode == "transcript":
+            return bool(self.options_panel.subtitles.options().languages)
+        return self._tools.get(tools.FFMPEG) is not None
+
     def _update_controls(self) -> None:
-        has_tools = all(self._tools.get(name) is not None for name in (tools.YT_DLP, tools.FFMPEG))
         self.analyze_button.setEnabled(self._can_analyze)
-        self.download_button.setEnabled(not self._busy and has_tools and self._info is not None)
+        self.download_button.setEnabled(self._can_download)
         self.options_panel.setEnabled(self._job is None)
         self.cancel_button.setEnabled(self._job is not None)
         self.url_edit.setEnabled(self._job is None)
@@ -325,8 +332,12 @@ class MainWindow(QMainWindow):
         self._set_bar(0.0)
         self._update_controls()
 
+    def _on_options_changed(self) -> None:
+        self._refresh_size()
+        self._update_controls()
+
     def _refresh_size(self) -> None:
-        if self._info is None:
+        if self._info is None or self.options_panel.mode == "transcript":
             return
         opts = self.options_panel.build_options("", Path(self.dir_edit.text()))
         size = estimate_size(self._info, opts)
@@ -337,26 +348,22 @@ class MainWindow(QMainWindow):
 
     def start_download(self) -> None:
         url = self.url_edit.text().strip()
-        ytdlp = self._tools.get(tools.YT_DLP)
-        if (
-            self._busy
-            or not url
-            or self._info is None
-            or ytdlp is None
-            or self._tools.get(tools.FFMPEG) is None
-        ):
+        if not url or not self._can_download:
             return
+        ytdlp = self._tools[tools.YT_DLP]
         output_dir = Path(self.dir_edit.text())
+        options = self.options_panel.build_options(url, output_dir)
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
+            if options.mode == "transcript":
+                job = TranscriptJob(str(ytdlp.path), options, self._tool_paths(), self)
+            else:
+                args = build_download_args(options, self._tool_paths())
+                job = DownloadJob(str(ytdlp.path), args, output_dir, self)
         except OSError as exc:
             QMessageBox.warning(self, "Dossier de sortie", f"Dossier inutilisable : {exc}")
             return
 
-        options = self.options_panel.build_options(url, output_dir)
-        args = build_download_args(options, self._tool_paths())
-
-        job = DownloadJob(str(ytdlp.path), args, output_dir, self)
         job.progress.connect(self._on_progress)
         job.stage.connect(self.stage_label.setText)
         job.log.connect(self._append_log)
@@ -395,6 +402,8 @@ class MainWindow(QMainWindow):
         self._last_dir = final.parent if final else Path(self.dir_edit.text())
         missing = self._job.failed_subtitles if self._job else []
         stage = f"Terminé : {final.name}" if final else "Terminé."
+        if isinstance(self._job, TranscriptJob) and len(self._job.transcripts) > 1:
+            stage = f"Terminé : {len(self._job.transcripts)} transcriptions enregistrées."
         if missing:
             stage += f"\nSous-titres non récupérés : {', '.join(missing)} (réessaie plus tard)."
         self._end_job(stage, 1.0)

@@ -24,7 +24,7 @@ FILE_MARKER = "[ytdl-file]"
 
 DEFAULT_OUTPUT_TEMPLATE = "%(title)s.%(ext)s"
 
-Mode = Literal["video", "audio"]
+Mode = Literal["video", "audio", "transcript"]
 Container = Literal["mp4", "mkv", "webm"]
 AudioFormat = Literal["best", "mp3", "m4a", "opus", "flac"]
 
@@ -119,6 +119,9 @@ def build_info_args(url: str, tools: ToolPaths | None = None) -> list[str]:
 
 def build_download_args(opts: DownloadOptions, tools: ToolPaths | None = None) -> list[str]:
     """Arguments (without the executable) to download ``opts.url``."""
+    if opts.mode == "transcript":
+        return _transcript_args(opts, tools)
+
     args = _common_args(tools)
     args += [
         "--newline",
@@ -153,16 +156,14 @@ def build_download_args(opts: DownloadOptions, tools: ToolPaths | None = None) -
             opts.container,
         ]
 
-    args += _subtitle_args(opts)
+    if opts.mode == "video":
+        args += _subtitle_args(opts)
     args += ["--", opts.url]
     return args
 
 
-def _subtitle_args(opts: DownloadOptions) -> list[str]:
-    subs = opts.subtitles
-    if not subs.languages:
-        return []
-    # --ignore-errors: a subtitle refused by YouTube (often HTTP 429) must not lose the video.
+def _subtitle_fetch_args(subs: SubtitleOptions) -> list[str]:
+    # --ignore-errors: a subtitle refused by YouTube (often HTTP 429) must not stop the others.
     args = [
         "--ignore-errors",
         "--sleep-subtitles",
@@ -173,14 +174,42 @@ def _subtitle_args(opts: DownloadOptions) -> list[str]:
     ]
     if subs.include_auto:
         args.append("--write-auto-subs")
-    embed = subs.embed and opts.mode == "video"
-    if embed:
+    return args
+
+
+def _subtitle_args(opts: DownloadOptions) -> list[str]:
+    subs = opts.subtitles
+    if not subs.languages:
+        return []
+    args = _subtitle_fetch_args(subs)
+    if subs.embed:
         # Without no-keep-subs, --write-subs leaves the .srt files next to the video.
         args += ["--embed-subs", "--compat-options", "no-keep-subs"]
     # webm can only hold WebVTT subtitles: keep the original format when embedding there.
-    if not (embed and opts.container == "webm"):
+    if not (subs.embed and opts.container == "webm"):
         args += ["--convert-subs", "srt"]
     return args
+
+
+def _transcript_args(opts: DownloadOptions, tools: ToolPaths | None) -> list[str]:
+    """Subtitles only, as VTT: no media stream is downloaded and ffmpeg is not needed."""
+    return [
+        *_common_args(tools),
+        "--newline",
+        "--progress",
+        "--progress-template",
+        f"download:{PROGRESS_MARKER}%(progress)j",
+        "--paths",
+        str(opts.output_dir),
+        "--output",
+        opts.output_template,
+        "--skip-download",
+        *_subtitle_fetch_args(opts.subtitles),
+        "--sub-format",
+        "vtt",
+        "--",
+        opts.url,
+    ]
 
 
 # --------------------------------------------------------------------------- output parsing
@@ -504,6 +533,8 @@ def estimate_size(info: VideoInfo, opts: DownloadOptions) -> int | None:
 
     Audio that gets re-encoded (mp3, flac) has no reliable estimate.
     """
+    if opts.mode == "transcript":
+        return None
     if opts.mode == "audio":
         if opts.audio_format not in _AUDIO_CODEC_ORDER:
             return None

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..ytdlp import SubtitleChoice, SubtitleOptions
+from ..ytdlp import Mode, SubtitleChoice, SubtitleOptions
 
 _EMBED_KEY = "subtitles_embed"
 _LIST_HEIGHT = 130
@@ -24,9 +24,12 @@ _ROLE = Qt.ItemDataRole.UserRole
 
 
 class SubtitlesPanel(QWidget):
+    changed = Signal()
+
     def __init__(self, settings: QSettings) -> None:
         super().__init__()
         self._settings = settings
+        self._mode: Mode = "video"
 
         self.toggle = QToolButton(
             checkable=True,
@@ -72,7 +75,7 @@ class SubtitlesPanel(QWidget):
         self.toggle.toggled.connect(self._on_toggled)
         self.filter_edit.textChanged.connect(self._refresh_visibility)
         self.translations_check.toggled.connect(self._refresh_visibility)
-        self.language_list.itemChanged.connect(self._refresh_summary)
+        self.language_list.itemChanged.connect(self._on_item_changed)
         self.embed_radio.toggled.connect(self._on_embed)
         self.set_choices([])
 
@@ -104,11 +107,21 @@ class SubtitlesPanel(QWidget):
         self.toggle.setChecked(False)
         self.toggle.setEnabled(bool(choices))
         self._refresh_visibility()
-        self._refresh_summary()
+        self._refresh_layout()
 
-    def set_audio_mode(self, audio: bool) -> None:
-        # Audio files never embed subtitles: they are always written as .srt.
-        self.output_row.setVisible(not audio)
+    def set_mode(self, mode: Mode) -> None:
+        """Hidden in audio mode; in transcript mode the list is always open, without output."""
+        self._mode = mode
+        self.setVisible(mode != "audio")
+        self.output_row.setVisible(mode == "video")
+        self._refresh_layout()
+
+    def _refresh_layout(self) -> None:
+        has_choices = self.language_list.count() > 0
+        always_open = self._mode == "transcript" and has_choices
+        self.toggle.setVisible(not always_open)
+        self.body.setVisible(always_open or self.toggle.isChecked())
+        self._refresh_summary()
 
     def options(self) -> SubtitleOptions:
         selected = self._selected()
@@ -119,8 +132,12 @@ class SubtitlesPanel(QWidget):
         )
 
     def _on_toggled(self, shown: bool) -> None:
-        self.body.setVisible(shown)
         self.toggle.setArrowType(Qt.ArrowType.DownArrow if shown else Qt.ArrowType.RightArrow)
+        self._refresh_layout()
+
+    def _on_item_changed(self) -> None:
+        self._refresh_summary()
+        self.changed.emit()
 
     def _on_embed(self, embed: bool) -> None:
         self._settings.setValue(_EMBED_KEY, embed)
@@ -142,7 +159,11 @@ class SubtitlesPanel(QWidget):
 
     def _refresh_summary(self) -> None:
         if not self.language_list.count():
-            self.toggle.setText("Sous-titres : aucun disponible")
+            self.toggle.setText(
+                "Cette vidéo n'a pas de sous-titres : transcription impossible."
+                if self._mode == "transcript"
+                else "Sous-titres : aucun disponible"
+            )
             return
         codes = [choice.code for choice in self._selected()]
         self.toggle.setText(f"Sous-titres : {', '.join(codes) if codes else 'aucun'}")

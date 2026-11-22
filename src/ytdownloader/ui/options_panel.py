@@ -1,4 +1,4 @@
-"""Download options: video quality and container, or audio format."""
+"""Download options: video quality and container, audio format, or transcript."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, Signal
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QButtonGroup,
     QComboBox,
     QFormLayout,
@@ -17,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..ytdlp import AUDIO_FORMATS, VIDEO_CONTAINERS, DownloadOptions
+from ..ytdlp import AUDIO_FORMATS, VIDEO_CONTAINERS, DownloadOptions, Mode
 from .subtitles_panel import SubtitlesPanel
 
 _AUDIO_LABELS = {
@@ -46,12 +47,15 @@ class OptionsPanel(QWidget):
 
         self.video_radio = QRadioButton("Vidéo")
         self.audio_radio = QRadioButton("Audio seul")
+        self.transcript_radio = QRadioButton("Transcription")
         self._mode_group = QButtonGroup(self)
         self._mode_group.addButton(self.video_radio)
         self._mode_group.addButton(self.audio_radio)
+        self._mode_group.addButton(self.transcript_radio)
         modes = QHBoxLayout()
         modes.addWidget(self.video_radio)
         modes.addWidget(self.audio_radio)
+        modes.addWidget(self.transcript_radio)
         modes.addStretch(1)
 
         self.height_combo = QComboBox()
@@ -86,17 +90,23 @@ class OptionsPanel(QWidget):
         layout.addWidget(self.size_label)
 
         self._load()
-        self.video_radio.toggled.connect(self._on_mode)
+        self._mode_group.buttonToggled.connect(self._on_mode)
+        self.subtitles.changed.connect(self.changed)
         self.height_combo.activated.connect(self._on_height_chosen)
         self.container_combo.currentIndexChanged.connect(self._on_choice)
         self.audio_format_combo.currentIndexChanged.connect(self._on_choice)
 
+    @property
+    def mode(self) -> Mode:
+        if self.transcript_radio.isChecked():
+            return "transcript"
+        return "audio" if self.audio_radio.isChecked() else "video"
+
     def _load(self) -> None:
-        audio = self._settings.value("mode", "video", str) == "audio"
-        self.audio_radio.setChecked(audio)
-        self.video_radio.setChecked(not audio)
-        self.stack.setCurrentIndex(int(audio))
-        self.subtitles.set_audio_mode(audio)
+        saved = self._settings.value("mode", "video", str)
+        radios = {"audio": self.audio_radio, "transcript": self.transcript_radio}
+        radios.get(saved, self.video_radio).setChecked(True)
+        self._apply_mode()
         self._select(self.container_combo, self._settings.value("container", "mp4", str))
         self._select(self.audio_format_combo, self._settings.value("audio_format", "mp3", str))
 
@@ -107,15 +117,21 @@ class OptionsPanel(QWidget):
             combo.setCurrentIndex(index)
 
     def _save(self) -> None:
-        self._settings.setValue("mode", "audio" if self.audio_radio.isChecked() else "video")
+        self._settings.setValue("mode", self.mode)
         self._settings.setValue("container", self.container_combo.currentData())
         self._settings.setValue("audio_format", self.audio_format_combo.currentData())
 
-    def _on_mode(self) -> None:
-        audio = self.audio_radio.isChecked()
-        self.stack.setCurrentIndex(int(audio))
-        self.subtitles.set_audio_mode(audio)
-        self._on_choice()
+    def _apply_mode(self) -> None:
+        mode = self.mode
+        self.stack.setCurrentIndex(int(mode == "audio"))
+        self.stack.setVisible(mode != "transcript")
+        self.size_label.setVisible(mode != "transcript")
+        self.subtitles.set_mode(mode)
+
+    def _on_mode(self, _button: QAbstractButton, checked: bool) -> None:
+        if checked:  # the group also reports the button being unchecked
+            self._apply_mode()
+            self._on_choice()
 
     def _on_height_chosen(self) -> None:
         # Saved only on a user choice: a 480p video must not lower the preference.
@@ -139,7 +155,7 @@ class OptionsPanel(QWidget):
         return DownloadOptions(
             url=url,
             output_dir=output_dir,
-            mode="audio" if self.audio_radio.isChecked() else "video",
+            mode=self.mode,
             max_height=self.height_combo.currentData() or None,
             container=self.container_combo.currentData(),
             audio_format=self.audio_format_combo.currentData(),

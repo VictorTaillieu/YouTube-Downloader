@@ -5,9 +5,16 @@ from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QTimer
 
-from ytdownloader.jobs import DownloadJob, InfoJob, LineSplitter, ToolTask, partial_paths
+from ytdownloader.jobs import (
+    DownloadJob,
+    InfoJob,
+    LineSplitter,
+    ToolTask,
+    TranscriptJob,
+    partial_paths,
+)
 from ytdownloader.tools import ToolError
-from ytdownloader.ytdlp import PROGRESS_MARKER, Progress
+from ytdownloader.ytdlp import PROGRESS_MARKER, DownloadOptions, Progress, SubtitleOptions
 
 
 def run_until(signals, timeout_ms=10000, start=None):
@@ -169,6 +176,86 @@ def test_tool_task_reports_result_and_errors(qapp):
     signals = {"ok": task.succeeded, "failed": task.failed}
     assert run_until(signals, start=task.start) == ("failed", ("nope",))
     task.wait()
+
+
+VTT = "WEBVTT\n\n00:01.000 --> 00:02.000\nBonjour\n"
+
+
+def fake_ytdlp(tmp_path, body):
+    """Executable receiving yt-dlp's arguments, with its --paths folder in ``out``."""
+    script = tmp_path / "fake-yt-dlp"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import pathlib, sys, time\n"
+        "out = pathlib.Path(sys.argv[sys.argv.index('--paths') + 1])\n"
+        f"vtt = {VTT!r}\n"
+        f"{body}\n"
+    )
+    script.chmod(0o755)
+    return str(script)
+
+
+def transcript_job(tmp_path, body, languages):
+    output = tmp_path / "out"
+    output.mkdir()
+    options = DownloadOptions(
+        "https://youtu.be/x",
+        output,
+        mode="transcript",
+        subtitles=SubtitleOptions(languages, include_auto=True),
+    )
+    return TranscriptJob(fake_ytdlp(tmp_path, body), options), output
+
+
+def test_transcript_writes_text_and_reports_missing_language(qapp, tmp_path):
+    body = (
+        "(out / 'Clip.v2.fr.vtt').write_text(vtt)\n"
+        "print(\"WARNING: Unable to download video subtitles for 'en': HTTP Error 429\","
+        " file=sys.stderr)"
+    )
+    job, output = transcript_job(tmp_path, body, ["fr", "en"])
+    (output / "Clip.v2.fr.txt").write_text("mine")
+    temp_dir = job._output_dir
+    signals = outcomes(job)
+    job.start()
+    name, args = run_until(signals)
+
+    assert name == "ok"
+    assert args[0] == output / "Clip.v2.fr (2).txt"
+    assert args[0].read_text("utf-8") == "Bonjour\n"
+    assert (output / "Clip.v2.fr.txt").read_text() == "mine"
+    assert job.failed_subtitles == ["en"]
+    assert not temp_dir.exists()
+
+
+def test_transcript_fails_when_no_language_was_fetched(qapp, tmp_path):
+    body = (
+        "print(\"WARNING: Unable to download video subtitles for 'fr': HTTP Error 429\","
+        " file=sys.stderr)"
+    )
+    job, output = transcript_job(tmp_path, body, ["fr"])
+    temp_dir = job._output_dir
+    signals = outcomes(job)
+    job.start()
+    name, args = run_until(signals)
+
+    assert name == "failed"
+    assert "HTTP Error 429" in args[0]
+    assert list(output.iterdir()) == []
+    assert not temp_dir.exists()
+
+
+def test_transcript_cancel_leaves_nothing(qapp, tmp_path):
+    body = "(out / 'Clip.fr.vtt').write_text(vtt)\nprint('ready', flush=True)\ntime.sleep(60)"
+    job, output = transcript_job(tmp_path, body, ["fr"])
+    temp_dir = job._output_dir
+    job.log.connect(lambda line: line == "ready" and job.cancel())
+    signals = outcomes(job)
+    job.start()
+
+    assert run_until(signals)[0] == "cancelled"
+    assert list(output.iterdir()) == []
+    assert not temp_dir.exists()
 
 
 def info_outcomes(job):

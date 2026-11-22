@@ -43,8 +43,8 @@ Ce plan est copié dans le dépôt sous `docs/PLAN.md`. À la fin de chaque ité
 | 1 | Backend (outils, args, parsing) | ✅ fait |
 | 2 | UI PySide6 minimale non bloquante | ✅ fait |
 | 3 | Analyse URL & choix format/qualité | ✅ fait |
-| 4 | Sous-titres | ✅ fait (à relire/commiter) |
-| 5 | Mode Transcription | ⏳ à faire |
+| 4 | Sous-titres | ✅ fait |
+| 5 | Mode Transcription | ✅ fait (à relire/commiter) |
 | 6 | Packaging & CI | ⏳ à faire |
 
 ### Journal
@@ -164,6 +164,27 @@ Limites connues :
 - `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
 - `uv run python -m ytdownloader` : vidéo avec sous-titres manuels et auto, en `.srt` puis intégrés (MP4, MKV), filtre, mode audio, annulation.
 - Windows : non testé.
+
+#### It. 5 — 2026-11-22
+Fait :
+- `transcript.py` (pur) : `vtt_to_text()` retire horaires, balises, entités HTML, marqueurs `>>` et annotations entre crochets. Seules les pistes auto défilantes sont dédoublonnées, un refrain manuel est conservé. Nouveau paragraphe après 2 s de pause. `unique_path()` n'écrase jamais un fichier.
+- `ytdlp.py` : mode `transcript` (`--skip-download`, VTT uniquement). Le mode Audio ne demande plus aucun sous-titre.
+- `jobs.py` : `TranscriptJob` télécharge dans un dossier temporaire, puis écrit `<titre>.<langue>.txt` en UTF-8. Le dossier temporaire est toujours supprimé.
+- UI : bouton **Transcription** (choix conservé), liste des langues dépliée, sans choix de sortie ni taille estimée. Section sous-titres masquée en Audio. « Télécharger » exige une langue cochée mais pas ffmpeg. Message clair si la vidéo n'a pas de sous-titres.
+- Tests : 102 au total.
+- Validé en réel (Linux, sans affichage, au niveau du job) : piste manuelle, deux langues, annulation sans fichier résiduel, piste auto originale d'une conférence de ~3 300 mots sans répétition détectée.
+
+Écarts :
+- Une piste récupérée mais sans texte (uniquement `[Music]`, par exemple) compte comme manquante : aucun fichier vide n'est écrit.
+- Si au moins une langue est récupérée, le job réussit même si yt-dlp sort avec un code d'erreur.
+
+Limites connues :
+- Une piste auto reste sans ponctuation ni majuscules, et peut contenir des hésitations (« um », « uh »).
+
+À tester :
+- `uv run ruff check && uv run ruff format --check src tests && uv run pytest`
+- `uv run python -m ytdownloader` : mode Transcription avec une piste manuelle, une piste auto, deux langues, une annulation, puis une vidéo sans sous-titres. Vérifier que la section sous-titres disparaît en Audio et que le mode est conservé au redémarrage.
+- Windows : non testé (noms de fichiers, encodage).
 
 ## Itérations (chacune testable et commitée par toi)
 

@@ -207,6 +207,47 @@ def test_new_video_clears_subtitle_selection(make_window):
     assert panel.options().languages == []
 
 
+def test_transcript_mode_needs_a_language_but_not_ffmpeg(make_window):
+    window = make_window({**all_tools(), tools.FFMPEG: None})
+    analysed(window)
+    options = window.options_panel
+    subtitles = options.subtitles
+    subtitles.set_choices([SubtitleChoice("fr", "French", False)])
+    assert not window.download_button.isEnabled()
+
+    options.transcript_radio.setChecked(True)
+    assert subtitles.body.isVisibleTo(options)
+    assert not subtitles.toggle.isVisibleTo(options)
+    assert not subtitles.output_row.isVisibleTo(options)
+    assert not options.stack.isVisibleTo(options)
+    assert not options.size_label.isVisibleTo(options)
+    assert not window.download_button.isEnabled()
+
+    subtitles.language_list.item(0).setCheckState(Qt.CheckState.Checked)
+    assert window.download_button.isEnabled()
+    assert options.build_options("u", Path("/o")).mode == "transcript"
+
+
+def test_transcript_mode_explains_a_video_without_subtitles(make_window):
+    window = make_window(all_tools())
+    analysed(window)
+    window.options_panel.transcript_radio.setChecked(True)
+    subtitles = window.options_panel.subtitles
+    assert subtitles.toggle.isVisibleTo(window.options_panel)
+    assert "pas de sous-titres" in subtitles.toggle.text()
+    assert not window.download_button.isEnabled()
+
+
+def test_audio_mode_hides_subtitles_and_mode_is_saved(make_window):
+    window = make_window(all_tools())
+    options = window.options_panel
+    options.audio_radio.setChecked(True)
+    assert not options.subtitles.isVisibleTo(options)
+    options.transcript_radio.setChecked(True)
+    assert options.subtitles.isVisibleTo(options)
+    assert options._settings.value("mode") == "transcript"
+
+
 def test_pick_height():
     assert pick_height([1080, 720, 480], 720) == 720
     assert pick_height([1080, 480], 720) == 480

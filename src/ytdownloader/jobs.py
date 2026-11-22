@@ -5,19 +5,26 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QThread, Signal
 
 from .tools import ToolError
+from .transcript import unique_path, vtt_to_text
 from .ytdlp import (
+    DownloadOptions,
     FinalFile,
     Progress,
+    ToolPaths,
+    build_download_args,
     is_subtitle_file,
     parse_info_json,
     parse_output_line,
@@ -289,7 +296,9 @@ class DownloadJob(QObject):
         for line in self._stderr.flush():
             self._handle_stderr(line)
         self._done = True
+        self._conclude(code, status)
 
+    def _conclude(self, code: int, status: QProcess.ExitStatus) -> None:
         if self._cancelling:
             self._cleanup()
             self.cancelled.emit()
@@ -303,7 +312,73 @@ class DownloadJob(QObject):
     def _on_error(self, error: QProcess.ProcessError) -> None:
         if error == QProcess.ProcessError.FailedToStart and not self._done:
             self._done = True
+            self._cleanup()
             self.failed.emit(f"Impossible de lancer yt-dlp : {self._process.errorString()}")
+
+
+class TranscriptJob(DownloadJob):
+    """Fetch subtitles into a temporary folder, then write them as text in the output folder.
+
+    Nothing reaches the output folder before yt-dlp has finished, so a cancel leaves no file.
+    """
+
+    def __init__(
+        self,
+        program: str,
+        options: DownloadOptions,
+        tools: ToolPaths | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        temp_dir = Path(tempfile.mkdtemp(prefix="ytdownloader-"))
+        args = build_download_args(replace(options, output_dir=temp_dir), tools)
+        super().__init__(program, args, temp_dir, parent)
+        self._target_dir = options.output_dir
+        self._languages = list(options.subtitles.languages)
+        self._failure_line: str | None = None
+        self.transcripts: list[Path] = []
+
+    def _handle_stderr(self, line: str) -> None:
+        super()._handle_stderr(line)
+        if subtitle_failure(line):
+            self._failure_line = line
+
+    def _cleanup(self) -> None:
+        shutil.rmtree(self._output_dir, ignore_errors=True)
+
+    def _write_transcripts(self) -> None:
+        tracks = [p for p in self._output_dir.iterdir() if p.suffix == ".vtt"]
+        missing: list[str] = []
+        for language in self._languages:
+            track = next((p for p in tracks if p.name.endswith(f".{language}.vtt")), None)
+            text = vtt_to_text(track.read_text("utf-8", "replace")) if track else ""
+            if not text:
+                missing.append(language)
+                continue
+            target = unique_path(self._target_dir / track.with_suffix(".txt").name)
+            target.write_text(text, encoding="utf-8")
+            self.transcripts.append(target)
+        self.failed_subtitles = missing
+
+    def _conclude(self, code: int, status: QProcess.ExitStatus) -> None:
+        if self._cancelling:
+            self._cleanup()
+            self.cancelled.emit()
+            return
+        try:
+            self._write_transcripts()
+        except OSError as exc:
+            for path in self.transcripts:
+                path.unlink(missing_ok=True)
+            self._cleanup()
+            self.failed.emit(f"Impossible d'écrire la transcription : {exc}")
+            return
+        self._cleanup()
+        if self.transcripts:
+            self.succeeded.emit(self.transcripts[0])
+        else:
+            detail = self._last_error or self._failure_line
+            message = "Aucun sous-titre n'a pu être récupéré."
+            self.failed.emit(f"{message} {detail}" if detail else message)
 
 
 class ToolTask(QThread):

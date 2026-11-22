@@ -177,11 +177,26 @@ def test_friendly_error():
     assert ytdlp.friendly_error("Video unavailable") == "Video unavailable"
 
 
-def test_subtitles_never_embedded_in_audio():
-    subs = SubtitleOptions(["fr"], embed=True)
+def test_audio_mode_ignores_subtitles():
+    subs = SubtitleOptions(["fr"], include_auto=True, embed=True)
     args = ytdlp.build_download_args(DownloadOptions(URL, OUT, mode="audio", subtitles=subs))
-    assert "--write-subs" in args
-    assert "--embed-subs" not in args
+    for flag in ("--write-subs", "--write-auto-subs", "--embed-subs", "--convert-subs"):
+        assert flag not in args
+
+
+def test_transcript_args_fetch_only_vtt_subtitles():
+    subs = SubtitleOptions(["fr", "en-orig"], include_auto=True, embed=True)
+    opts = DownloadOptions(URL, OUT, mode="transcript", subtitles=subs)
+    args = ytdlp.build_download_args(opts)
+    assert "--skip-download" in args
+    assert "--ignore-errors" in args
+    assert "--write-auto-subs" in args
+    assert args[args.index("--sub-langs") + 1] == "fr,en-orig"
+    assert args[args.index("--sub-format") + 1] == "vtt"
+    for flag in ("--format", "--embed-subs", "--convert-subs", "--print"):
+        assert flag not in args
+    assert args[-2:] == ["--", URL]
+    assert ytdlp.estimate_size(ytdlp.parse_info({"id": "x"}), opts) is None
 
 
 # --------------------------------------------------------------------------- info args
